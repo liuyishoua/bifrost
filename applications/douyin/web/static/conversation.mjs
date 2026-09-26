@@ -155,7 +155,7 @@ export function openConversation({dialog,showDialog,api,user,accountId,onClose=(
     imageDraft.hidden=!draft.image&&!draft.uploading;
     const preview=draft.uploading?'<span class="hint">正在上传图片…</span>':draft.image?`<img class="message-image-preview" src="${e(localImageURL(draft.image.url))}" alt="待发送图片预览"><button type="button" id="chat-image-remove" ${state.sending?'disabled':''}>移除图片，改发文字</button>`:'';
     if(imageDraft.innerHTML!==preview)imageDraft.innerHTML=preview;
-    find('#chat-permission').textContent=!account?.can_send?'当前账号暂不可发送':state.send_permission?.state==='unreplied'?'已发送，等待对方回复':state.send_permission?.state==='replied'?'对方已回复，可连续发送文字或图片，不受首发冷却限制':state.send_permission?.reason||(draft.image?'图片已上传，点击发送后才提交':'Enter 换行 · Ctrl / ⌘ + Enter 发送');
+    find('#chat-permission').textContent=!account?.can_send?'当前账号暂不可发送':state.send_permission?.state==='unreplied'?'已发送，等待对方回复':state.send_permission?.state==='replied'?'对方已回复，可连续发送文字或图片，不受首发冷却限制':state.send_permission?.reason||(draft.image?'图片已上传，点击发送后才提交':'Enter 发送 · Shift + Enter 换行');
     find('#chat-sync').textContent=state.busy?'正在同步当前会话…':state.conversation?'每 5 秒同步当前会话':'暂无可同步的会话；发送后可继续同步';
   }
   const session=conversationSession({uid:user.uid,api,onUpdate:update,onError:message=>{
@@ -189,7 +189,11 @@ export function openConversation({dialog,showDialog,api,user,accountId,onClose=(
       if(aid===previousAccount){input.value=draft.text;update(lastState);}
     }
   });
-  input.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)&&!ev.isComposing){ev.preventDefault();find('#chat-compose').requestSubmit();}});
+  input.addEventListener('keydown',ev=>{
+    if(ev.key!=='Enter'||ev.isComposing||ev.keyCode===229||ev.shiftKey)return;
+    ev.preventDefault();
+    if(!ev.repeat&&!sendButton.disabled&&input.value.trim())find('#chat-compose').requestSubmit();
+  });
   function close() {
     if(closed)return;closed=true;session.close();dialog.classList.remove('conversation-dialog');
     dialog.removeEventListener('close',close);onClose();
