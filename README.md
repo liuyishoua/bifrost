@@ -1,6 +1,14 @@
 # Bifrost
 
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange)](LICENSE)
+
 Bifrost 是业务应用外侧的统一入口。Caddy 是唯一对外网关；Flask 门户负责账号、权限和服务启停。现有 Ticket 与 Douyin 源码位于 `applications/`，运行数据也迁入各自目录并被 Git 忽略。同一应用的获授权用户共用业务实例及数据。
+
+## 使用许可
+
+**本项目仅供学习、研究、测试及其他非商业用途，不得用于商业目的。** 对本仓库中版权所有者拥有权利的代码，适用 [PolyForm Noncommercial License 1.0.0](LICENSE)；非商业用途下可依该许可证使用、修改和分享。商业使用须事先取得版权所有者的单独授权。
+
+第三方代码、素材和依赖仍受其各自许可证约束，票务应用的依赖说明见 [THIRD_PARTY_NOTICES.md](applications/ticket/THIRD_PARTY_NOTICES.md)。本仓库先前以 MIT 许可证发布的历史版本不受本次许可变更追溯限制。本项目属于**源码可见、限制商用**，不应标为 MIT 或 OSI 意义上的开源许可证。
 
 ## 接入契约
 
@@ -53,4 +61,4 @@ caddy run --config Caddyfile
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-门户前端已有注册、登录、应用首页、管理后台、个人设置和操作记录页面。当前本机网关、门户和迁入的 Ticket 已运行，未登录直达应用会跳转登录或返回 401；临时授权会话通过网关访问 Ticket 首页、脚本和只读 API 均返回 200，测试会话已删除。Douyin 真实模式未启动，以免恢复业务工作；两套业务的深层刷新、扫码和消息发送仍须单独联调。
+门户前端已有注册、登录、应用首页、管理后台、个人设置和操作记录页面。自动测试覆盖账号、授权、服务状态及来源校验；本机网关联调验证了 Ticket 首页、脚本、只读 API 和抖音二次验证专用路径。扫码、官方二次验证完成及消息发送仍需在真实账号下单独联调。
