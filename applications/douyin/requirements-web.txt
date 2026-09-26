@@ -1,0 +1,12 @@
+# Web 控制台及其搜索 / 登录 / 文字与图片私信所需依赖。
+# 不引入作品下载、视频处理或 blackboxprotobuf 的旧版 protobuf 约束。
+Flask>=3.1,<4
+cryptography
+qrcode[pil]
+beautifulsoup4
+curl_cffi
+ecdsa
+loguru
+protobuf>=5.27
+python-dotenv
+requests

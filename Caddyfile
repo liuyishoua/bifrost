@@ -1,0 +1,84 @@
+{
+	auto_https off
+}
+
+(clean_request) {
+	request_header -X-Forwarded-Method
+	request_header -X-Forwarded-Uri
+	request_header -X-Forwarded-Host
+	request_header -X-Forwarded-Proto
+	request_header -X-Forwarded-Prefix
+	request_header -X-Bifrost-Verification
+	request_header -X-Remote-User
+	request_header -Remote-User
+}
+
+http://127.0.0.1:8080 {
+	bind 127.0.0.1
+	@internal path /internal /internal/*
+	handle @internal {
+		respond 404
+	}
+	redir /ticket /ticket/ 308
+	redir /douyin /douyin/ 308
+
+	handle /ticket/* {
+		route {
+			import clean_request
+			forward_auth 127.0.0.1:8790 {
+				uri /internal/auth/ticket
+				header_up Host 127.0.0.1:8790
+			}
+			uri strip_prefix /ticket
+			reverse_proxy 127.0.0.1:8767 {
+				header_up Host 127.0.0.1:8767
+				header_up -Cookie
+				header_up X-Forwarded-Prefix /ticket
+			}
+		}
+	}
+	handle /douyin/* {
+		route {
+			import clean_request
+			forward_auth 127.0.0.1:8790 {
+				uri /internal/auth/douyin
+				header_up Host 127.0.0.1:8790
+			}
+			uri strip_prefix /douyin
+			reverse_proxy 127.0.0.1:8766 {
+				header_up Host 127.0.0.1:8766
+				header_up -Cookie
+				header_up X-Forwarded-Prefix /douyin
+			}
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8790 {
+			header_up Host 127.0.0.1:8790
+			header_up -X-Forwarded-Method
+			header_up -X-Forwarded-Uri
+		}
+	}
+}
+
+http://127.0.0.1:8081 {
+	bind 127.0.0.1
+	@verify path /verification-frame /static/verification-frame.js /verification-request/*
+	handle @verify {
+		route {
+			import clean_request
+			forward_auth 127.0.0.1:8790 {
+				uri /internal/auth/douyin
+				header_up Host 127.0.0.1:8790
+				header_up X-Bifrost-Verification 1
+			}
+			reverse_proxy 127.0.0.1:8766 {
+				header_up Host verification.localhost
+				header_up -Cookie
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+}

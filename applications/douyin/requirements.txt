@@ -1,0 +1,27 @@
+aiofiles
+beautifulsoup4
+cryptography
+ecdsa
+loguru
+openpyxl
+opencv-python-headless
+av
+pillow
+python-dotenv
+qrcode
+requests
+retry
+urllib3
+websocket-client
+websockets
+
+# 抖音接口统一走 utils/http_client.py（curl_cffi 冒充 Chrome 的 TLS/HTTP2 指纹）。
+# requests 只剩 utils/data_util.py 下载 CDN 媒体在用，那条链路不涉及风控。
+curl_cffi
+
+# static/Response_pb2.py 是新版 protoc 生成的，要用 protobuf>=5.27 的 runtime_version。
+# 注意 blackboxprotobuf 声明依赖 protobuf==3.10，直接装会把 protobuf 降级导致
+# `ImportError: cannot import name 'runtime_version'`；实测两者运行时可以共存，
+# 所以这里显式钉住版本，装完请确认 protobuf 没被降下去。
+protobuf>=5.27
+blackboxprotobuf

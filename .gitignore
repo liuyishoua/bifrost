@@ -1,0 +1,16 @@
+.runtime/
+.venv/
+.venv-ticket/
+.venv-douyin/
+.bin/
+.idea/
+__pycache__/
+.pytest_cache/
+applications/ticket/activate-code
+applications/ticket/activate-code.decoded.patch
+applications/douyin/datas/
+applications/ticket/.runtime/
+applications/ticket/.runtime_web/
+applications/**/server.lock
+applications/**/.env
+applications/**/.DS_Store
