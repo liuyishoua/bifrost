@@ -78,3 +78,5 @@ https://{$BIFROST_PUBLIC_IP}:8443 {
 		respond 404
 	}
 }
+
+import .runtime/apps.public.caddy

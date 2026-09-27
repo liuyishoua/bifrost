@@ -82,3 +82,5 @@ http://127.0.0.1:8081 {
 		respond 404
 	}
 }
+
+import .runtime/apps.local.caddy
