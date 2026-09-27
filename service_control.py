@@ -25,6 +25,7 @@ class Controller:
         self.registry = registry
         self.locks = {key: threading.Lock() for key in APPS}
         self.transitioning = set()
+        self.children = {}
 
     def _app(self, app_id):
         app = self.registry.get(app_id) if self.registry else APPS.get(app_id)
@@ -129,7 +130,10 @@ class Controller:
     def _idle(self, app):
         if app.kind == "manifest":
             if app.activity_path:
-                state = read_json(app, app.activity_path)
+                try:
+                    state = read_json(app, app.activity_path)
+                except IntegrationError as exc:
+                    raise ServiceError(str(exc)) from exc
                 if state.get("idle") is not True:
                     raise ServiceError(str(state.get("reason") or "服务存在在途工作"))
             return
@@ -158,6 +162,7 @@ class Controller:
                 if not app.repository.is_dir() or not Path(self._command(app)[0]).is_file():
                     raise ServiceError("业务源码目录或可执行文件不存在")
                 if self.registry and app.kind == "manifest":
+                    app.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
                     self.registry.pin(app_id)
                 self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
                 log = open(self.runtime / f"{app_id}.log", "ab", buffering=0)
@@ -171,10 +176,15 @@ class Controller:
                         if self.registry and app.kind == "manifest":
                             self.registry.unpin(app_id)
                         raise ServiceError("启动失败，请查看业务日志") from exc
+                    self.children[app_id] = proc
                 finally:
                     log.close()
                 for _ in range(50):
                     if proc.poll() is not None:
+                        proc.wait()
+                        self.children.pop(app_id, None)
+                        if self.registry and app.kind == "manifest":
+                            self.registry.unpin(app_id)
                         raise ServiceError("进程提前退出，请查看业务日志")
                     if self._listening(app) and self._owner(app) and self._ready(app):
                         return "running"
@@ -203,6 +213,9 @@ class Controller:
                         owner.wait(timeout=0)
                     except (psutil.Error, OSError):
                         pass
+                    child = self.children.pop(app_id, None)
+                    if child:
+                        child.wait(timeout=0)
                     if self.registry and app.kind == "manifest":
                         self.registry.unpin(app_id)
                     return "stopped"

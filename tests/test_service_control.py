@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 from app_registry import AppRegistry
+from integrations.base import IntegrationError
 
 from service_control import Controller, ServiceError
 
@@ -97,6 +98,42 @@ class ServiceControlTests(unittest.TestCase):
             with self.assertRaisesRegex(ServiceError, "启动失败"):
                 control.operate("weixin", "start")
         self.assertNotIn("weixin", registry.pinned)
+
+    def test_manifest_data_directory_exists_before_launch(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        (app_dir / "server").write_text("not executable")
+        (app_dir / "app.yaml").write_text(
+            "schema: 1\nid: weixin\nname: 微信\nstart: [server, '${PORT}', '${DATA_DIR}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        control = Controller(root / "runtime", registry)
+        with patch.object(control, "_listening", return_value=False), \
+             patch.object(control, "_configured_processes", return_value=[]):
+            with self.assertRaises(ServiceError):
+                control.operate("weixin", "start")
+        self.assertTrue((app_dir / ".runtime").is_dir())
+
+    def test_unreadable_manifest_activity_blocks_stop_as_service_error(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        (app_dir / "app.yaml").write_text(
+            "schema: 1\nid: weixin\nname: 微信\nstart: [bin/weixin, '${PORT}']\nactivity_path: /activity\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        control = Controller(root / "runtime", registry)
+        owner = Mock()
+        with patch.object(control, "_listening", return_value=True), \
+             patch.object(control, "_owner", return_value=owner), \
+             patch.object(control, "_ready", return_value=True), \
+             patch("service_control.read_json", side_effect=IntegrationError("无法读取")):
+            with self.assertRaisesRegex(ServiceError, "无法读取"):
+                control.operate("weixin", "stop")
+        owner.send_signal.assert_not_called()
 
 
 if __name__ == "__main__":

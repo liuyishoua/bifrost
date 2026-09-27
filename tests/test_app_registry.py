@@ -40,7 +40,7 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         self.assertFalse((self.apps / "weixin" / ".bifrost").exists())
 
     def test_invalid_app_does_not_hide_valid_app(self):
-        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app]\n")
+        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app, '${PORT}']\n")
         self.manifest("broken", "schema: 1\nid: ../broken\nname: 错误\nstart: [bin/app]\n")
         registry = AppRegistry(self.apps, self.runtime)
         registry.refresh()
@@ -54,6 +54,8 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
             "badplaceholder": "schema: 1\nid: badplaceholder\nname: bad\nstart: [bin/app, '${HOME}']\n",
             "badpath": "schema: 1\nid: badpath\nname: bad\nstart: [../escape]\n",
             "ticket": "schema: 1\nid: ticket\nname: bad\nstart: [bin/app]\n",
+            "badport": "schema: 1\nid: badport\nname: bad\nstart: [bin/app]\n",
+            "boolschema": "schema: true\nid: boolschema\nname: bad\nstart: [bin/app, '${PORT}']\n",
         }
         for directory, manifest in cases.items():
             self.manifest(directory, manifest)
@@ -72,7 +74,7 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         self.assertGreater(original.external_port, 0)
         first.pin("weixin")
         (self.apps / "weixin" / "app.yaml").write_text(
-            "schema: 1\nid: weixin\nname: 被修改\nstart: [bin/other]\n")
+            "schema: 1\nid: weixin\nname: 被修改\nstart: [bin/other, '${PORT}']\n")
         second = AppRegistry(self.apps, self.runtime)
         second.refresh()
         self.assertEqual(second.get("weixin"), original)
@@ -81,7 +83,7 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         self.assertEqual(second.get("weixin").port, original.port)
 
     def test_skips_occupied_port_when_allocating(self):
-        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app]\n")
+        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app, '${PORT}']\n")
         with patch("app_registry.INTERNAL_PORTS", [15000, 15001]), \
              patch("app_registry.port_available", side_effect=lambda port: port != 15000):
             registry = AppRegistry(self.apps, self.runtime)

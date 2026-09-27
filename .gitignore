@@ -1,5 +1,6 @@
 .runtime/
 .venv/
+.venv
 .venv-ticket/
 .venv-douyin/
 .bin/

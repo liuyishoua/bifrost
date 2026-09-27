@@ -7,10 +7,10 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import re
+import socket
 from urllib.parse import urlsplit
 
 import yaml
-import psutil
 
 from apps import App, LEGACY_APPS
 
@@ -24,9 +24,10 @@ EXTERNAL_PORTS = range(9000, 10000)
 
 def port_available(port: int) -> bool:
     try:
-        return not any(connection.status == psutil.CONN_LISTEN and connection.laddr.port == port
-                       for connection in psutil.net_connections(kind="tcp"))
-    except (psutil.Error, OSError):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", port))
+        return True
+    except OSError:
         return False
 
 
@@ -137,7 +138,7 @@ class AppRegistry:
         if not isinstance(value, dict) or set(value) - FIELDS:
             raise ManifestError("配置字段不正确")
         app_id = value.get("id")
-        if value.get("schema") != 1 or app_id != directory.name or not ID_RE.fullmatch(str(app_id)):
+        if type(value.get("schema")) is not int or value["schema"] != 1 or app_id != directory.name or not ID_RE.fullmatch(str(app_id)):
             raise ManifestError("schema 或应用 ID 不正确")
         if app_id in LEGACY_APPS:
             raise ManifestError("应用 ID 与现有应用重复")
@@ -148,6 +149,8 @@ class AppRegistry:
         if not isinstance(description, str) or len(description) > 240:
             raise ManifestError("应用描述过长")
         command = self._argv(value.get("start"), "start")
+        if not any("${PORT}" in arg for arg in command):
+            raise ManifestError("start 必须使用 ${PORT} 接收平台端口")
         build = self._argv(value["build"], "build") if "build" in value else ()
         executable = (directory / command[0]).resolve()
         if not executable.is_relative_to(directory.resolve()):

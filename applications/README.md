@@ -11,9 +11,9 @@
 
 其他团队用 Go、Python 或其他语言接入时：
 
-1. 在 `applications/<id>/` 放源码和可复现的构建说明，可执行文件由本机构建并加入 `.gitignore`。
-2. 应用只监听 `127.0.0.1`，实现 [接入协议](../INTEGRATION.md)中的只读 `ready` 与 `activity` 接口，以及正常退出信号处理。
-3. 将业务运行数据放在受保护目录，并为其加 `.gitignore`；在 `apps.py` 注册固定启动参数和数据目录。
-4. 在 `Caddyfile` 与 `Caddyfile.public` 配置固定前缀路由；在 `integrations/<id>/APP.md` 记录所有者、就绪和安全退出检查。
+1. 将源码和 `app.yaml` 放在 `applications/<id>/`。YAML 的 `id` 与目录名一致，用参数数组填写 `build`（可选）和 `start`。参考 [Go 示例](../examples/weixin-go/app.yaml)。
+2. 启动参数用 `${PORT}` 接收平台分配的端口，应用只监听 `127.0.0.1`。业务页面、API、静态资源照常使用自己的根路径，无需适配平台前缀。
+3. 管理员打开门户管理页即可发现应用；点击启动时平台构建并运行。无需改 `apps.py` 或 Caddyfile。
+4. 有持久数据时可在启动参数中使用 `${DATA_DIR}`，它指向应用的 `.runtime/`；构建产物放 `.bifrost/`。有后台任务时自行实现安全退出，必要时提供可选状态接口。
 
 启动与关闭由 Bifrost 在本机控制进程，业务服务不暴露启停 HTTP 接口。
