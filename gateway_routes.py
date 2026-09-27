@@ -31,7 +31,8 @@ def render_fragments(apps: tuple[App, ...], public_origin: str) -> tuple[str, st
 \t\t\t}}
 \t\t\treverse_proxy 127.0.0.1:{app.port} {{
 \t\t\t\theader_up Host 127.0.0.1:{app.port}
-\t\t\t\theader_up -Cookie
+\t\t\t\theader_up Cookie "^portal_session=[^;]*(; *)?" ""
+\t\t\t\theader_up Cookie "; *portal_session=[^;]*" ""
 \t\t\t}}
 \t\t}}
 \t}}
@@ -47,6 +48,7 @@ class GatewayRoutes:
         self.runtime = Path(runtime)
         self.public_origin = public_origin
         self.config_path = Path(config_path) if config_path else None
+        self.pending_reload = False
 
     @staticmethod
     def _write(path: Path, content: str):
@@ -54,22 +56,25 @@ class GatewayRoutes:
         temp.write_text(content)
         temp.replace(path)
 
-    def sync(self, apps: tuple[App, ...]) -> None:
+    def sync(self, apps: tuple[App, ...], reload: bool = True) -> None:
         self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
         paths = (self.runtime / "apps.local.caddy", self.runtime / "apps.public.caddy")
         content = render_fragments(apps, self.public_origin)
         previous = tuple(path.read_text() if path.exists() else "" for path in paths)
-        if content == previous and all(path.exists() for path in paths):
+        if content == previous and all(path.exists() for path in paths) and not (reload and self.pending_reload):
             return
         try:
             for path, value in zip(paths, content):
                 self._write(path, value)
-            if self.config_path:
+            if self.config_path and not reload:
+                self.pending_reload = True
+            if self.config_path and reload:
                 for action in ("validate", "reload"):
                     result = subprocess.run(("caddy", action, "--config", str(self.config_path)),
                                             capture_output=True, text=True, check=False, timeout=20)
                     if result.returncode:
                         raise GatewayError(f"Caddy {action} 失败: {result.stderr.strip()}")
+                self.pending_reload = False
         except (OSError, subprocess.TimeoutExpired, GatewayError) as exc:
             for path, value in zip(paths, previous):
                 self._write(path, value)

@@ -21,7 +21,8 @@ class GatewayRouteTests(unittest.TestCase):
         for rendered in (local, public):
             self.assertIn("uri /internal/auth/weixin", rendered)
             self.assertIn("import clean_request", rendered)
-            self.assertIn("header_up -Cookie", rendered)
+            self.assertIn('header_up Cookie "^portal_session=', rendered)
+            self.assertNotIn("header_up -Cookie", rendered)
             self.assertIn("reverse_proxy 127.0.0.1:10000", rendered)
             self.assertNotIn("strip_prefix", rendered)
 
@@ -52,6 +53,23 @@ class GatewayRouteTests(unittest.TestCase):
                     gateway.sync((self.manifest_app(),))
             self.assertEqual(local.read_text(), "old local\n")
             self.assertEqual(public.read_text(), "old public\n")
+
+    def test_routes_remain_ready_when_caddy_has_not_started(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            gateway = GatewayRoutes(runtime, "https://203.0.113.7", Path("Caddyfile.public"))
+            with patch("gateway_routes.subprocess.run") as command:
+                gateway.sync((self.manifest_app(),), reload=False)
+                command.assert_not_called()
+            self.assertIn("weixin", (runtime / "apps.public.caddy").read_text())
+
+    def test_refresh_reloads_routes_written_at_startup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gateway = GatewayRoutes(Path(directory), "https://203.0.113.7", Path("Caddyfile.public"))
+            gateway.sync((self.manifest_app(),), reload=False)
+            with patch("gateway_routes.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stderr="")) as command:
+                gateway.sync((self.manifest_app(),))
+            self.assertEqual(command.call_count, 2)
 
 
 if __name__ == "__main__":

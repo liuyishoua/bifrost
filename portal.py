@@ -9,7 +9,7 @@ import re
 import secrets
 import sqlite3
 import time
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 import hashlib
 
 from flask import Flask, abort, g, make_response, redirect, render_template_string, request
@@ -17,7 +17,8 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 from waitress import serve
 
-from apps import APPS
+from app_registry import AppRegistry
+from gateway_routes import GatewayError, GatewayRoutes
 from service_control import Controller, ServiceError
 
 USER_RE = re.compile(r"[a-z0-9_-]{3,32}\Z")
@@ -43,7 +44,7 @@ PAGE = """<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewpor
 </style><header><b>Bifrost</b><nav>{% if user %}<a href='/'>应用</a><a href='/settings'>个人设置</a>{% if user['role']=='admin' %}<a href='/admin'>管理</a><a href='/audit'>记录</a>{% endif %}<form class=inline method=post action='/logout'><input type=hidden name=csrf value='{{ csrf_token }}'><button class=secondary>退出</button></form>{% endif %}</nav></header><main><h1>{{ title }}</h1>{% if message %}<p class=notice>{{ message }}</p>{% endif %}{{ body|safe }}</main></html>"""
 
 
-def create_app(runtime=None):
+def create_app(runtime=None, registry=None):
     runtime = Path(runtime or os.environ.get("BIFROST_DATA_DIR") or os.environ.get("ANYDOOR_DATA_DIR") or Path(__file__).parent / ".runtime").resolve()
     runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(runtime, 0o700)
@@ -67,8 +68,19 @@ def create_app(runtime=None):
     if urlsplit(public_origin).scheme not in ("http", "https"):
         raise ValueError("BIFROST_PUBLIC_ORIGIN must be an HTTP origin")
     secure_cookie = urlsplit(public_origin).scheme == "https"
-    controller = Controller(runtime)
+    if registry is None:
+        registry = AppRegistry(Path(__file__).parent / "applications", runtime, public_origin)
+        registry.refresh()
+    gateway = GatewayRoutes(runtime, public_origin, os.environ.get("BIFROST_CADDY_CONFIG"))
+    gateway.sync(registry.all(), reload=False)
+    controller = Controller(runtime, registry)
     app.extensions["controller"] = controller
+    app.extensions["app_registry"] = registry
+    app.extensions["gateway_routes"] = gateway
+    last_discovery_errors = {}
+
+    def apps():
+        return {item.id: item for item in registry.all()}
 
     @contextmanager
     def db():
@@ -113,7 +125,9 @@ def create_app(runtime=None):
         return response
 
     def allowed_next(value):
-        return value if value in ("/", *(a.path for a in APPS.values())) else "/"
+        destinations = {"/"}
+        destinations.update(a.path if a.kind == "legacy" else a.origin + "/" for a in registry.all())
+        return value if value in destinations else "/"
 
     def require_user():
         user = current()
@@ -234,7 +248,7 @@ def create_app(runtime=None):
         with db() as conn:
             grants = {r[0] for r in conn.execute("SELECT app_id FROM grants WHERE user_id=?", (user["id"],))}
         cards = []
-        for item in APPS.values():
+        for item in registry.all():
             if user["role"] != "admin" and item.id not in grants:
                 continue
             details = ""
@@ -243,7 +257,8 @@ def create_app(runtime=None):
                 action = "stop" if state == "running" else "start"
                 button = f"<form class=inline method=post action='/admin/service/{item.id}/{action}'>{form_csrf()}<button class=secondary>{'关闭' if action=='stop' else '启动'}</button></form>" if state in ("running", "stopped") else ""
                 details = f"<p>状态：{escape(state)} {escape(reason)}</p>{button}"
-            cards.append(f"<article class=card><h2>{escape(item.name)}</h2><p>{escape(item.description)}</p><a class=button href='{item.path}'>进入应用</a>{details}</article>")
+            destination = item.path if item.kind == "legacy" else item.origin + "/"
+            cards.append(f"<article class=card><h2>{escape(item.name)}</h2><p>{escape(item.description)}</p><a class=button href='{escape(destination)}'>进入应用</a>{details}</article>")
         return page("我的应用", "<p class=muted>同一应用的获授权用户共用业务实例与数据。</p><div class=grid>" + "".join(cards) + "</div>")
 
     @app.route("/settings", methods=["GET", "POST"])
@@ -268,20 +283,42 @@ def create_app(runtime=None):
 
     @app.get("/admin")
     def admin():
-        _, response = require_admin()
+        nonlocal last_discovery_errors
+        actor, response = require_admin()
         if response:
             return response
+        registry.refresh()
+        gateway_error = ""
+        try:
+            gateway.sync(registry.all())
+        except GatewayError as exc:
+            gateway_error = str(exc)
+        newly_invalid = {key: error for key, error in registry.errors.items()
+                         if last_discovery_errors.get(key) != error}
+        last_discovery_errors = dict(registry.errors)
         with db() as conn:
+            for key, error in newly_invalid.items():
+                audit(conn, actor["username"], "app_validation_error", f"{key}:{error}")
+            if gateway_error:
+                audit(conn, actor["username"], "gateway_reload_error", gateway_error)
             users = conn.execute("SELECT id,username,role,status,must_change FROM users ORDER BY id DESC").fetchall()
             grants = {(r[0], r[1]) for r in conn.execute("SELECT user_id,app_id FROM grants")}
         rows = []
         for user in users:
             controls = f"<form method=post action='/admin/user/{user['id']}'>{form_csrf()}<select name=status><option value=pending>待审批</option><option value=active {'selected' if user['status']=='active' else ''}>启用</option><option value=disabled {'selected' if user['status']=='disabled' else ''}>禁用</option></select> "
-            controls += " ".join(f"<label><input type=checkbox name=grant value='{a.id}' {'checked' if (user['id'],a.id) in grants else ''}> {escape(a.name)}</label>" for a in APPS.values())
+            controls += " ".join(f"<label><input type=checkbox name=grant value='{a.id}' {'checked' if (user['id'],a.id) in grants else ''}> {escape(a.name)}</label>" for a in registry.all())
             controls += "<button>保存</button></form>"
             controls += f"<form method=post action='/admin/reset/{user['id']}'>{form_csrf()}<label>临时密码<input type=password name=password minlength=10 maxlength=128 required></label><button class=secondary>重置密码</button></form>"
             rows.append(f"<tr><td>{escape(user['username'])}</td><td>{escape(user['role'])}</td><td>{controls}</td></tr>")
-        return page("账号管理", "<table><tr><th>账号</th><th>角色</th><th>操作</th></tr>" + "".join(rows) + "</table>")
+        discovered = "".join(f"<li>{escape(item.name)} · {escape(item.origin or item.path)}</li>"
+                             for item in registry.all())
+        problems = "".join(f"<li>{escape(key)}：{escape(error)}</li>"
+                           for key, error in registry.errors.items())
+        if gateway_error:
+            problems += f"<li>网关：{escape(gateway_error)}</li>"
+        body = ("<section class=card><h2>应用接入</h2><ul>" + discovered + problems + "</ul></section>"
+                "<table><tr><th>账号</th><th>角色</th><th>操作</th></tr>" + "".join(rows) + "</table>")
+        return page("账号管理", body)
 
     @app.post("/admin/user/<int:user_id>")
     def update_user(user_id):
@@ -290,7 +327,7 @@ def create_app(runtime=None):
             return response
         status = request.form.get("status")
         chosen = set(request.form.getlist("grant"))
-        if status not in ("pending", "active", "disabled") or not chosen <= APPS.keys():
+        if status not in ("pending", "active", "disabled") or not chosen <= apps().keys():
             abort(400)
         with db() as conn:
             target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
@@ -340,7 +377,7 @@ def create_app(runtime=None):
         actor, response = require_admin()
         if response:
             return response
-        if app_id not in APPS or action not in ("start", "stop"):
+        if app_id not in apps() or action not in ("start", "stop"):
             abort(404)
         with db() as conn:
             audit(conn, actor["username"], "service_request", f"{app_id}:{action}")
@@ -357,16 +394,24 @@ def create_app(runtime=None):
 
     @app.get("/internal/auth/<app_id>")
     def internal_auth(app_id):
-        if request.remote_addr not in ("127.0.0.1", "::1") or app_id not in APPS:
+        if request.remote_addr not in ("127.0.0.1", "::1") or app_id not in apps():
             abort(404)
         method = request.headers.get("X-Forwarded-Method", "GET").upper()
         original = request.headers.get("X-Forwarded-Uri", "")
-        expected = APPS[app_id].path
+        item = apps()[app_id]
+        expected = item.path if item.kind == "legacy" else item.origin + "/"
         verify = request.headers.get("X-Bifrost-Verification") == "1"
         if verify:
             if app_id != "douyin" or not (original.split("?", 1)[0].startswith("/verification-request/") or
                     original.split("?", 1)[0] in ("/verification-frame", "/static/verification-frame.js")):
                 app.logger.warning("auth_path_rejected app=%s path=%s verify=%s", app_id, original.split("?", 1)[0], verify)
+                abort(403)
+        elif item.kind == "manifest":
+            forwarded = urlsplit(item.origin)
+            path = original.split("?", 1)[0]
+            if (request.headers.get("X-Forwarded-Host") != forwarded.netloc or
+                    request.headers.get("X-Forwarded-Proto") != forwarded.scheme or
+                    not path.startswith("/") or path.startswith("//") or ".." in path.split("/")):
                 abort(403)
         elif not (original.split("?", 1)[0] == expected[:-1] or original.split("?", 1)[0].startswith(expected)):
             app.logger.warning("auth_path_rejected app=%s path=%s verify=%s", app_id,
@@ -376,7 +421,9 @@ def create_app(runtime=None):
         if not user:
             accept = request.headers.get("Accept", "")
             if method in ("GET", "HEAD") and "text/html" in accept and not verify:
-                return redirect("/login?next=" + expected)
+                destination = (public_origin + "/login?next=" + quote(expected, safe="")
+                               if item.kind == "manifest" else "/login?next=" + expected)
+                return redirect(destination)
             return "未登录", 401
         if user["must_change"]:
             return "请先修改密码", 403
@@ -390,7 +437,7 @@ def create_app(runtime=None):
             return "服务正在启停", 503
         if method not in ("GET", "HEAD", "OPTIONS"):
             source = request.headers.get("Origin", "")
-            required = verify_origin if verify else public_origin
+            required = verify_origin if verify else item.origin if item.kind == "manifest" else public_origin
             if source != required:
                 return "请求来源无效", 403
         return "", 204
