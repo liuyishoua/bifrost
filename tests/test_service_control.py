@@ -2,6 +2,10 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 import psutil
+from pathlib import Path
+import sys
+
+from app_registry import AppRegistry
 
 from service_control import Controller, ServiceError
 
@@ -43,6 +47,56 @@ class ServiceControlTests(unittest.TestCase):
              patch.object(self.control, "_idle"):
             self.assertEqual(self.control.operate("douyin", "stop"), "stopped")
         owner.send_signal.assert_called_once()
+
+    def test_manifest_build_failure_prevents_start(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        (app_dir / "app.yaml").write_text(
+            "schema: 1\nid: weixin\nname: 微信\n"
+            f"build: ['{sys.executable}', '-c', 'import sys; sys.exit(7)']\n"
+            "start: [bin/weixin, '--port', '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        control = Controller(root / "runtime", registry)
+        with patch.object(control, "_listening", return_value=False), \
+             patch.object(control, "_configured_processes", return_value=[]):
+            with self.assertRaisesRegex(ServiceError, "构建失败"):
+                control.operate("weixin", "start")
+        self.assertTrue((root / "runtime" / "weixin.build.log").exists())
+
+    def test_manifest_unknown_owner_never_receives_stop(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        (app_dir / "app.yaml").write_text(
+            "schema: 1\nid: weixin\nname: 微信\nstart: [bin/weixin, '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        control = Controller(root / "runtime", registry)
+        with patch.object(control, "_listening", return_value=True), patch.object(control, "_owner", return_value=None):
+            with self.assertRaisesRegex(ServiceError, "进程归属"):
+                control.operate("weixin", "stop")
+
+    def test_failed_manifest_spawn_is_reported_and_unpinned(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        executable = app_dir / "server"
+        executable.write_text("not executable")
+        (app_dir / "app.yaml").write_text(
+            "schema: 1\nid: weixin\nname: 微信\nstart: [server, '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        control = Controller(root / "runtime", registry)
+        with patch.object(control, "_listening", return_value=False), \
+             patch.object(control, "_configured_processes", return_value=[]):
+            with self.assertRaisesRegex(ServiceError, "启动失败"):
+                control.operate("weixin", "start")
+        self.assertNotIn("weixin", registry.pinned)
 
 
 if __name__ == "__main__":

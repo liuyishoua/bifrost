@@ -10,6 +10,7 @@ import time
 import psutil
 
 from apps import APPS
+from integrations.base import read_json
 from integrations import adapter_for
 from integrations.base import IntegrationError
 
@@ -19,10 +20,37 @@ class ServiceError(Exception):
 
 
 class Controller:
-    def __init__(self, runtime):
+    def __init__(self, runtime, registry=None):
         self.runtime = Path(runtime)
+        self.registry = registry
         self.locks = {key: threading.Lock() for key in APPS}
         self.transitioning = set()
+
+    def _app(self, app_id):
+        app = self.registry.get(app_id) if self.registry else APPS.get(app_id)
+        if app is None:
+            raise ServiceError("未知应用")
+        return app
+
+    def _command(self, app):
+        return tuple(part.replace("${PORT}", str(app.port)).replace("${DATA_DIR}", str(app.data_dir))
+                     for part in app.command)
+
+    def _build(self, app):
+        if not app.build:
+            return
+        (app.repository / ".bifrost" / "bin").mkdir(parents=True, exist_ok=True)
+        command = tuple(part.replace("${PORT}", str(app.port)).replace("${DATA_DIR}", str(app.data_dir))
+                        for part in app.build)
+        self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            with open(self.runtime / f"{app.id}.build.log", "wb") as log:
+                result = subprocess.run(command, cwd=app.repository, stdin=subprocess.DEVNULL,
+                                        stdout=log, stderr=subprocess.STDOUT, timeout=120, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ServiceError("构建失败，请查看构建日志") from exc
+        if result.returncode:
+            raise ServiceError("构建失败，请查看构建日志")
 
     def _listening(self, app):
         with socket.socket() as sock:
@@ -37,7 +65,7 @@ class Controller:
             return None
         for proc in processes:
             try:
-                if (tuple(proc.info["cmdline"] or ()) == app.command and
+                if (tuple(proc.info["cmdline"] or ()) == self._command(app) and
                         Path(proc.info["cwd"] or "").resolve() == app.repository.resolve()):
                     matches.append(proc)
             except (psutil.Error, OSError):
@@ -61,7 +89,7 @@ class Controller:
             raise ServiceError("无法检查本机进程") from exc
         for proc in processes:
             try:
-                if (tuple(proc.info["cmdline"] or ()) == app.command and
+                if (tuple(proc.info["cmdline"] or ()) == self._command(app) and
                         Path(proc.info["cwd"] or "").resolve() == app.repository.resolve()):
                     found.append(proc)
             except (psutil.Error, OSError):
@@ -69,13 +97,20 @@ class Controller:
         return found
 
     def _ready(self, app):
+        if app.kind == "manifest":
+            if not app.ready_path:
+                return True
+            try:
+                return read_json(app, app.ready_path).get("ready") is True
+            except IntegrationError:
+                return False
         try:
             return adapter_for(app.id).ready(app)
         except IntegrationError:
             return False
 
     def status(self, app_id):
-        app = APPS[app_id]
+        app = self._app(app_id)
         if app_id in self.transitioning:
             return "starting", "服务正在启停"
         if not self._listening(app):
@@ -92,6 +127,12 @@ class Controller:
         return "running", ""
 
     def _idle(self, app):
+        if app.kind == "manifest":
+            if app.activity_path:
+                state = read_json(app, app.activity_path)
+                if state.get("idle") is not True:
+                    raise ServiceError(str(state.get("reason") or "服务存在在途工作"))
+            return
         try:
             adapter_for(app.id).ensure_idle(app)
         except IntegrationError as exc:
@@ -100,10 +141,10 @@ class Controller:
     def operate(self, app_id, action):
         if action not in ("start", "stop"):
             raise ServiceError("未知操作")
-        lock = self.locks[app_id]
+        app = self._app(app_id)
+        lock = self.locks.setdefault(app_id, threading.Lock())
         if not lock.acquire(blocking=False):
             raise ServiceError("服务正在启停")
-        app = APPS[app_id]
         self.transitioning.add(app_id)
         try:
             # Read state directly while transition marker is set.
@@ -112,15 +153,24 @@ class Controller:
             if action == "start":
                 if listening or self._configured_processes(app):
                     raise ServiceError("端口或配置进程已存在，不能重复启动")
-                if not app.repository.is_dir() or not Path(app.command[0]).is_file():
+                if app.kind == "manifest":
+                    self._build(app)
+                if not app.repository.is_dir() or not Path(self._command(app)[0]).is_file():
                     raise ServiceError("业务源码目录或可执行文件不存在")
+                if self.registry and app.kind == "manifest":
+                    self.registry.pin(app_id)
                 self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
                 log = open(self.runtime / f"{app_id}.log", "ab", buffering=0)
                 try:
-                    proc = subprocess.Popen(app.command, cwd=app.repository, stdin=subprocess.DEVNULL,
-                                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                            env={**os.environ, "ANYDOOR_PUBLIC_ORIGIN": os.environ.get("BIFROST_PUBLIC_ORIGIN") or os.environ.get("ANYDOOR_PUBLIC_ORIGIN", "http://127.0.0.1:8080"),
-                                                 "ANYDOOR_VERIFY_ORIGIN": os.environ.get("BIFROST_VERIFY_ORIGIN") or os.environ.get("ANYDOOR_VERIFY_ORIGIN", "http://127.0.0.1:8081")})
+                    try:
+                        proc = subprocess.Popen(self._command(app), cwd=app.repository, stdin=subprocess.DEVNULL,
+                                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                                                env={**os.environ, "ANYDOOR_PUBLIC_ORIGIN": os.environ.get("BIFROST_PUBLIC_ORIGIN") or os.environ.get("ANYDOOR_PUBLIC_ORIGIN", "http://127.0.0.1:8080"),
+                                                     "ANYDOOR_VERIFY_ORIGIN": os.environ.get("BIFROST_VERIFY_ORIGIN") or os.environ.get("ANYDOOR_VERIFY_ORIGIN", "http://127.0.0.1:8081")})
+                    except OSError as exc:
+                        if self.registry and app.kind == "manifest":
+                            self.registry.unpin(app_id)
+                        raise ServiceError("启动失败，请查看业务日志") from exc
                 finally:
                     log.close()
                 for _ in range(50):
@@ -153,6 +203,8 @@ class Controller:
                         owner.wait(timeout=0)
                     except (psutil.Error, OSError):
                         pass
+                    if self.registry and app.kind == "manifest":
+                        self.registry.unpin(app_id)
                     return "stopped"
                 time.sleep(.2)
             raise ServiceError("服务未正常退出或端口仍被占用")

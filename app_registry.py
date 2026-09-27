@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from dataclasses import replace
 import json
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
 import yaml
+import psutil
 
 from apps import App, LEGACY_APPS
 
@@ -16,6 +18,16 @@ from apps import App, LEGACY_APPS
 ID_RE = re.compile(r"[a-z][a-z0-9_-]{1,31}\Z")
 PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
 FIELDS = {"schema", "id", "name", "description", "build", "start", "activity_path", "ready_path"}
+INTERNAL_PORTS = range(10000, 11000)
+EXTERNAL_PORTS = range(9000, 10000)
+
+
+def port_available(port: int) -> bool:
+    try:
+        return not any(connection.status == psutil.CONN_LISTEN and connection.laddr.port == port
+                       for connection in psutil.net_connections(kind="tcp"))
+    except (psutil.Error, OSError):
+        return False
 
 
 class ManifestError(ValueError):
@@ -31,6 +43,43 @@ class AppRegistry:
         self.records = dict(LEGACY_APPS)
         self.errors: dict[str, str] = {}
         self.pinned = self._load_pinned()
+        self.ports = self._load_ports()
+
+    def _port_file(self):
+        return self.runtime / "apps-ports.json"
+
+    def _load_ports(self):
+        try:
+            raw = json.loads(self._port_file().read_text())
+            return {key: (int(value[0]), int(value[1])) for key, value in raw.items()}
+        except (OSError, ValueError, KeyError, TypeError, IndexError):
+            return {}
+
+    def _save_ports(self):
+        self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+        target = self._port_file()
+        temp = target.with_suffix(".tmp")
+        temp.write_text(json.dumps(self.ports))
+        temp.replace(target)
+
+    def _allocated(self, app: App) -> App:
+        if app.id in self.ports:
+            internal, external = self.ports[app.id]
+        else:
+            reserved = {port for pair in self.ports.values() for port in pair}
+            reserved.update(legacy.port for legacy in LEGACY_APPS.values())
+            internal = next((port for port in INTERNAL_PORTS if port not in reserved and port_available(port)), None)
+            external = next((port for port in EXTERNAL_PORTS if port not in reserved and port_available(port)), None)
+            if internal is None or external is None:
+                raise ManifestError("没有可用端口")
+            self.ports[app.id] = (internal, external)
+            self._save_ports()
+        parsed = urlsplit(self.public_origin)
+        host = parsed.hostname
+        if ":" in host:
+            host = f"[{host}]"
+        return replace(app, port=internal, external_port=external,
+                       origin=f"{parsed.scheme}://{host}:{external}")
 
     def _pin_file(self):
         return self.runtime / "apps-registry.json"
@@ -122,7 +171,7 @@ class AppRegistry:
             if not directory.is_dir() or not (directory / "app.yaml").is_file():
                 continue
             try:
-                parsed = self._parse(directory)
+                parsed = self._allocated(self._parse(directory))
                 records[parsed.id] = parsed
             except ManifestError as exc:
                 errors[directory.name] = str(exc)

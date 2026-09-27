@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app_registry import AppRegistry
 
@@ -13,6 +14,9 @@ class RegistryTests(unittest.TestCase):
         self.apps = self.root / "applications"
         self.apps.mkdir()
         self.runtime = self.root / "runtime"
+        available = patch("app_registry.port_available", return_value=True)
+        available.start()
+        self.addCleanup(available.stop)
 
     def manifest(self, directory, text):
         target = self.apps / directory
@@ -58,6 +62,31 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         for directory in cases:
             self.assertIn(directory, registry.errors)
         self.assertEqual(registry.get("ticket").kind, "legacy")
+
+    def test_port_assignment_survives_restart_and_pinned_manifest_edit(self):
+        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app, '${PORT}']\n")
+        first = AppRegistry(self.apps, self.runtime)
+        first.refresh()
+        original = first.get("weixin")
+        self.assertGreater(original.port, 0)
+        self.assertGreater(original.external_port, 0)
+        first.pin("weixin")
+        (self.apps / "weixin" / "app.yaml").write_text(
+            "schema: 1\nid: weixin\nname: 被修改\nstart: [bin/other]\n")
+        second = AppRegistry(self.apps, self.runtime)
+        second.refresh()
+        self.assertEqual(second.get("weixin"), original)
+        second.unpin("weixin")
+        self.assertEqual(second.get("weixin").name, "被修改")
+        self.assertEqual(second.get("weixin").port, original.port)
+
+    def test_skips_occupied_port_when_allocating(self):
+        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app]\n")
+        with patch("app_registry.INTERNAL_PORTS", [15000, 15001]), \
+             patch("app_registry.port_available", side_effect=lambda port: port != 15000):
+            registry = AppRegistry(self.apps, self.runtime)
+            registry.refresh()
+        self.assertEqual(registry.get("weixin").port, 15001)
 
 
 if __name__ == "__main__":
