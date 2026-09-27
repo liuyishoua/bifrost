@@ -20,9 +20,14 @@ class App:
     data_dir: Path
     ready_path: str
     command: tuple[str, ...]
+    kind: str = "legacy"
+    build: tuple[str, ...] = ()
+    external_port: int = 0
+    origin: str = ""
+    activity_path: str = ""
 
 
-APPS = {
+LEGACY_APPS = {
     "ticket": App("ticket", "抢票工作台", "查询车票与管理抢票任务", "/ticket/", 8767,
                   TICKET, TICKET / ".runtime_web",
                   "/api/state", (str(TICKET_PYTHON), "-m", "web", "--port", "8767", "--data-dir",
@@ -32,3 +37,6 @@ APPS = {
                   (str(DOUYIN_PYTHON), "-m", "web", "--port", "8766",
                    "--data-dir", str(DOUYIN / "datas" / "web"))),
 }
+
+# Compatibility while portal and process control migrate to AppRegistry.
+APPS = LEGACY_APPS

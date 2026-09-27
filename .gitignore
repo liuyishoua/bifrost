@@ -15,3 +15,5 @@ applications/ticket/.runtime_web/
 applications/**/server.lock
 applications/**/.env
 applications/**/.DS_Store
+applications/**/.bifrost/
+applications/**/.runtime/
