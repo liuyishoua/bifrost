@@ -4,6 +4,7 @@
 .venv-douyin/
 .bin/
 .idea/
+.worktrees/
 __pycache__/
 .pytest_cache/
 applications/ticket/activate-code
