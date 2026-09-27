@@ -48,6 +48,18 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         self.assertIsNone(registry.get("broken"))
         self.assertIn("broken", registry.errors)
 
+    def test_bad_encoding_and_nul_path_do_not_hide_valid_app(self):
+        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app, '${PORT}']\n")
+        bad_bytes = self.apps / "badbytes"
+        bad_bytes.mkdir()
+        (bad_bytes / "app.yaml").write_bytes(b"\xff")
+        self.manifest("badnul", 'schema: 1\nid: badnul\nname: bad\nstart: ["\\0", "${PORT}"]\n')
+        registry = AppRegistry(self.apps, self.runtime)
+        registry.refresh()
+        self.assertIsNotNone(registry.get("weixin"))
+        self.assertIn("badbytes", registry.errors)
+        self.assertIn("badnul", registry.errors)
+
     def test_rejects_invalid_command_and_duplicate_legacy_id(self):
         cases = {
             "badargv": "schema: 1\nid: badargv\nname: bad\nstart: 'bin/app --port 4'\n",

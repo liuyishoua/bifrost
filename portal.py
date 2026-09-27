@@ -288,6 +288,8 @@ def create_app(runtime=None, registry=None):
         if response:
             return response
         registry.refresh()
+        for app_id in tuple(registry.pinned):
+            controller.status(app_id)
         gateway_error = ""
         try:
             gateway.sync(registry.all())

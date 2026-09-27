@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 import socket
+import threading
 from urllib.parse import urlsplit
 
 import yaml
@@ -41,6 +42,7 @@ class AppRegistry:
         self.applications_dir = Path(applications_dir)
         self.runtime = Path(runtime)
         self.public_origin = public_origin.rstrip("/")
+        self.lock = threading.RLock()
         self.records = dict(LEGACY_APPS)
         self.errors: dict[str, str] = {}
         self.pinned = self._load_pinned()
@@ -106,14 +108,17 @@ class AppRegistry:
                                     for key, app in self.pinned.items()}, ensure_ascii=False))
         temp.replace(target)
 
-    def pin(self, app_id: str) -> None:
-        self.pinned[app_id] = self.records[app_id]
-        self._save_pinned()
+    def pin(self, app_id: str, selected: App | None = None) -> None:
+        with self.lock:
+            self.pinned[app_id] = selected if selected is not None else self.records[app_id]
+            self.records[app_id] = self.pinned[app_id]
+            self._save_pinned()
 
     def unpin(self, app_id: str) -> None:
-        self.pinned.pop(app_id, None)
-        self._save_pinned()
-        self.refresh()
+        with self.lock:
+            self.pinned.pop(app_id, None)
+            self._save_pinned()
+            self.refresh()
 
     def get(self, app_id: str) -> App | None:
         return self.records.get(app_id)
@@ -122,7 +127,7 @@ class AppRegistry:
         return tuple(self.records.values())
 
     def _argv(self, value, field):
-        if not isinstance(value, list) or not value or any(not isinstance(arg, str) or not arg for arg in value):
+        if not isinstance(value, list) or not value or any(not isinstance(arg, str) or not arg or "\0" in arg for arg in value):
             raise ManifestError(f"{field} 必须是非空参数数组")
         for arg in value:
             if "${" in arg and (arg.count("${") != len(PLACEHOLDER_RE.findall(arg)) or
@@ -133,7 +138,7 @@ class AppRegistry:
     def _parse(self, directory: Path) -> App:
         try:
             value = yaml.safe_load((directory / "app.yaml").read_text())
-        except (OSError, yaml.YAMLError) as exc:
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
             raise ManifestError("YAML 无法读取") from exc
         if not isinstance(value, dict) or set(value) - FIELDS:
             raise ManifestError("配置字段不正确")
@@ -168,16 +173,17 @@ class AppRegistry:
                    (str(executable), *command[1:]), "manifest", build, 0, "", activity_path)
 
     def refresh(self) -> None:
-        records = dict(LEGACY_APPS)
-        errors = {}
-        for directory in sorted(self.applications_dir.iterdir()) if self.applications_dir.is_dir() else ():
-            if not directory.is_dir() or not (directory / "app.yaml").is_file():
-                continue
-            try:
-                parsed = self._allocated(self._parse(directory))
-                records[parsed.id] = parsed
-            except ManifestError as exc:
-                errors[directory.name] = str(exc)
-        records.update(self.pinned)
-        self.records = records
-        self.errors = errors
+        with self.lock:
+            records = dict(LEGACY_APPS)
+            errors = {}
+            for directory in sorted(self.applications_dir.iterdir()) if self.applications_dir.is_dir() else ():
+                if not directory.is_dir() or not (directory / "app.yaml").is_file():
+                    continue
+                try:
+                    parsed = self._allocated(self._parse(directory))
+                    records[parsed.id] = parsed
+                except (ManifestError, ValueError) as exc:
+                    errors[directory.name] = str(exc)
+            records.update(self.pinned)
+            self.records = records
+            self.errors = errors

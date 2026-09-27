@@ -120,6 +120,17 @@ class Controller:
                     return "unavailable", "配置进程存在但端口未就绪"
             except ServiceError as exc:
                 return "unavailable", str(exc)
+            if self.registry and app.kind == "manifest" and app_id in self.registry.pinned:
+                lock = self.locks.setdefault(app_id, threading.Lock())
+                if not lock.acquire(blocking=False):
+                    return "starting", "服务正在启停"
+                try:
+                    if not self._listening(app) and not self._configured_processes(app):
+                        self.registry.unpin(app_id)
+                except ServiceError as exc:
+                    return "unavailable", str(exc)
+                finally:
+                    lock.release()
             return "stopped", ""
         if not self._owner(app):
             return "unavailable", "端口由无法确认的进程占用"
@@ -157,28 +168,34 @@ class Controller:
             if action == "start":
                 if listening or self._configured_processes(app):
                     raise ServiceError("端口或配置进程已存在，不能重复启动")
-                if app.kind == "manifest":
-                    self._build(app)
-                if not app.repository.is_dir() or not Path(self._command(app)[0]).is_file():
-                    raise ServiceError("业务源码目录或可执行文件不存在")
-                if self.registry and app.kind == "manifest":
-                    app.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-                    self.registry.pin(app_id)
-                self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
-                log = open(self.runtime / f"{app_id}.log", "ab", buffering=0)
+                pinned = bool(self.registry and app.kind == "manifest")
+                spawned = False
+                if pinned:
+                    self.registry.pin(app_id, app)
                 try:
-                    try:
-                        proc = subprocess.Popen(self._command(app), cwd=app.repository, stdin=subprocess.DEVNULL,
-                                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                                env={**os.environ, "ANYDOOR_PUBLIC_ORIGIN": os.environ.get("BIFROST_PUBLIC_ORIGIN") or os.environ.get("ANYDOOR_PUBLIC_ORIGIN", "http://127.0.0.1:8080"),
-                                                     "ANYDOOR_VERIFY_ORIGIN": os.environ.get("BIFROST_VERIFY_ORIGIN") or os.environ.get("ANYDOOR_VERIFY_ORIGIN", "http://127.0.0.1:8081")})
-                    except OSError as exc:
-                        if self.registry and app.kind == "manifest":
-                            self.registry.unpin(app_id)
-                        raise ServiceError("启动失败，请查看业务日志") from exc
+                    if app.kind == "manifest":
+                        self._build(app)
+                    if not app.repository.is_dir() or not Path(self._command(app)[0]).is_file():
+                        raise ServiceError("业务源码目录或可执行文件不存在")
+                    if self._listening(app) or self._configured_processes(app):
+                        raise ServiceError("端口或配置进程已存在，不能重复启动")
+                    if pinned:
+                        app.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    with open(self.runtime / f"{app_id}.log", "ab", buffering=0) as log:
+                        try:
+                            proc = subprocess.Popen(self._command(app), cwd=app.repository, stdin=subprocess.DEVNULL,
+                                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                                                    env={**os.environ, "ANYDOOR_PUBLIC_ORIGIN": os.environ.get("BIFROST_PUBLIC_ORIGIN") or os.environ.get("ANYDOOR_PUBLIC_ORIGIN", "http://127.0.0.1:8080"),
+                                                         "ANYDOOR_VERIFY_ORIGIN": os.environ.get("BIFROST_VERIFY_ORIGIN") or os.environ.get("ANYDOOR_VERIFY_ORIGIN", "http://127.0.0.1:8081")})
+                        except OSError as exc:
+                            raise ServiceError("启动失败，请查看业务日志") from exc
+                    spawned = True
                     self.children[app_id] = proc
-                finally:
-                    log.close()
+                except (ServiceError, OSError):
+                    if pinned and not spawned:
+                        self.registry.unpin(app_id)
+                    raise
                 for _ in range(50):
                     if proc.poll() is not None:
                         proc.wait()
@@ -191,6 +208,11 @@ class Controller:
                     time.sleep(.2)
                 raise ServiceError("启动后未通过进程、端口及就绪检查")
             if not listening:
+                if self.registry and app.kind == "manifest" and app_id in self.registry.pinned:
+                    if self._configured_processes(app):
+                        raise ServiceError("配置进程存在但端口未就绪")
+                    self.registry.unpin(app_id)
+                    return "stopped"
                 raise ServiceError("服务未运行")
             if not owner or not self._ready(app):
                 raise ServiceError("进程归属或就绪状态不明确，拒绝关闭")

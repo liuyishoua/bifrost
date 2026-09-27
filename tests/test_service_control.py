@@ -67,6 +67,115 @@ class ServiceControlTests(unittest.TestCase):
                 control.operate("weixin", "start")
         self.assertTrue((root / "runtime" / "weixin.build.log").exists())
 
+    def test_refresh_during_build_pins_selected_manifest(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        (app_dir / "server").write_text("old")
+        manifest = app_dir / "app.yaml"
+        manifest.write_text("schema: 1\nid: weixin\nname: old\nstart: [server, '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        selected = registry.get("weixin")
+        control = Controller(root / "runtime", registry)
+
+        def edit_while_building(_app):
+            manifest.write_text("schema: 1\nid: weixin\nname: new\nstart: [newserver, '${PORT}']\n")
+            registry.refresh()
+            self.assertEqual(registry.get("weixin"), selected)
+
+        with patch.object(control, "_listening", return_value=False), \
+             patch.object(control, "_configured_processes", return_value=[]), \
+             patch.object(control, "_build", side_effect=edit_while_building), \
+             patch("service_control.subprocess.Popen", side_effect=OSError("spawn failed")):
+            with self.assertRaises(ServiceError):
+                control.operate("weixin", "start")
+        self.assertEqual(registry.get("weixin").name, "new")
+
+    def test_removal_during_build_keeps_selected_record_until_launch_failure(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        (app_dir / "server").write_text("old")
+        manifest = app_dir / "app.yaml"
+        manifest.write_text("schema: 1\nid: weixin\nname: old\nstart: [server, '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        control = Controller(root / "runtime", registry)
+
+        def remove_while_building(_app):
+            manifest.unlink()
+            registry.refresh()
+            self.assertIsNotNone(registry.get("weixin"))
+
+        with patch.object(control, "_listening", return_value=False), \
+             patch.object(control, "_configured_processes", return_value=[]), \
+             patch.object(control, "_build", side_effect=remove_while_building), \
+             patch("service_control.subprocess.Popen", side_effect=OSError("spawn failed")):
+            with self.assertRaisesRegex(ServiceError, "启动失败"):
+                control.operate("weixin", "start")
+        self.assertIsNone(registry.get("weixin"))
+
+    def test_stale_pin_released_after_external_exit(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        manifest = app_dir / "app.yaml"
+        manifest.write_text("schema: 1\nid: weixin\nname: old\nstart: [server, '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        registry.pin("weixin")
+        manifest.write_text("schema: 1\nid: weixin\nname: new\nstart: [server, '${PORT}']\n")
+        registry.refresh()
+        control = Controller(root / "runtime", registry)
+        with patch.object(control, "_listening", return_value=False), \
+             patch.object(control, "_configured_processes", return_value=[]):
+            self.assertEqual(control.status("weixin")[0], "stopped")
+        self.assertEqual(registry.get("weixin").name, "new")
+        self.assertNotIn("weixin", registry.pinned)
+
+    def test_removed_manifest_can_be_stopped_after_external_exit_and_restart(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        manifest = app_dir / "app.yaml"
+        manifest.write_text("schema: 1\nid: weixin\nname: old\nstart: [server, '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        registry.pin("weixin")
+        manifest.unlink()
+        restarted = AppRegistry(root / "apps", root / "runtime")
+        restarted.refresh()
+        control = Controller(root / "runtime", restarted)
+        with patch.object(control, "_listening", return_value=False), \
+             patch.object(control, "_configured_processes", return_value=[]):
+            self.assertEqual(control.operate("weixin", "stop"), "stopped")
+        self.assertIsNone(restarted.get("weixin"))
+        self.assertFalse(restarted.pinned)
+
+    def test_occupied_port_after_build_prevents_spawn(self):
+        root = Path(self.temp.name)
+        app_dir = root / "apps" / "weixin"
+        app_dir.mkdir(parents=True)
+        (app_dir / "server").write_text("binary")
+        (app_dir / "app.yaml").write_text(
+            "schema: 1\nid: weixin\nname: 微信\nstart: [server, '${PORT}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        control = Controller(root / "runtime", registry)
+        with patch.object(control, "_listening", side_effect=[False, True]), \
+             patch.object(control, "_configured_processes", return_value=[]), \
+             patch("service_control.subprocess.Popen") as spawn:
+            with self.assertRaisesRegex(ServiceError, "端口或配置进程已存在"):
+                control.operate("weixin", "start")
+        spawn.assert_not_called()
+        self.assertFalse(registry.pinned)
+
     def test_manifest_unknown_owner_never_receives_stop(self):
         root = Path(self.temp.name)
         app_dir = root / "apps" / "weixin"

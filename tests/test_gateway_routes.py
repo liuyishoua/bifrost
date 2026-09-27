@@ -54,6 +54,21 @@ class GatewayRouteTests(unittest.TestCase):
             self.assertEqual(local.read_text(), "old local\n")
             self.assertEqual(public.read_text(), "old public\n")
 
+    def test_failed_validation_restores_routes_without_reloading(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            local = runtime / "apps.local.caddy"
+            public = runtime / "apps.public.caddy"
+            local.write_text("old local\n")
+            public.write_text("old public\n")
+            gateway = GatewayRoutes(runtime, "https://203.0.113.7", Path("Caddyfile.public"))
+            with patch("gateway_routes.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stderr="invalid")) as command:
+                with self.assertRaises(GatewayError):
+                    gateway.sync((self.manifest_app(),))
+            self.assertEqual(command.call_count, 1)
+            self.assertEqual(local.read_text(), "old local\n")
+            self.assertEqual(public.read_text(), "old public\n")
+
     def test_routes_remain_ready_when_caddy_has_not_started(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = Path(directory)
