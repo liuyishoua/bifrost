@@ -1,0 +1,6 @@
+schema: 1
+id: weixin
+name: 微信示例
+description: 演示 Go 应用如何交给 Bifrost 构建和启动
+build: [go, build, -o, .bifrost/bin/weixin, .]
+start: [.bifrost/bin/weixin, --port, "${PORT}"]

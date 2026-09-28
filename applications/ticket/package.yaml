@@ -1,0 +1,10 @@
+schema: 1
+targets:
+  windows-x64:
+    artifact: .bifrost/packages/windows-x64/ticket.exe
+    build_host: windows-x64
+    build: ["${PYTHON}", ../../python_desktop_build.py, ticket, windows-x64, "${OUTPUT}"]
+  macos-arm64:
+    artifact: .bifrost/packages/macos-arm64/ticket.app.zip
+    build_host: macos-arm64
+    build: ["${PYTHON}", ../../python_desktop_build.py, ticket, macos-arm64, "${OUTPUT}"]

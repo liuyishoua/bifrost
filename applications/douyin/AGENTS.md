@@ -98,6 +98,7 @@ profile = DouyinAPI.get_user_info(auth, user_url="https://www.douyin.com/user/<s
 - 演示启动：`.venv/bin/python -m web --demo`，打开 `http://127.0.0.1:8765`。明确使用模拟账号和模拟发送。
 - 真实启动：`.venv/bin/python -m web`，页面导入账号后才发起校验；任务必须手动开始。
 - 数据目录分别为 `datas/web-demo/`、`datas/web/`；数据库与 credential.key 一起保留，不提交、不回显凭证。
+- Bifrost 从本目录的 `app.yaml` 启动真实 Web 服务，保留 `datas/web/` 和内部端口 8766，普通页面走独立外部端口。平台传入 `BIFROST_APP_ORIGIN` 供写请求来源检查；二次验证仍使用单独受限的 `ANYDOOR_VERIFY_ORIGIN`。本机已验证登录后的页面、静态资源、只读 API、正确/错误写请求来源；未对迁移后的真实账号重新完成官方二次验证或发送联调。
 - 仅支持本机单进程；同一账号可服务多个任务且同一时刻仅一条发送，不同账号由独立线程并发。进行中的指定任务借调账号，使其退出共享池，暂停或结束后归还。原 Dockerfile 仍启动 main.py，并不是 Web 镜像。
 - 不运行 `python main.py` 做冒烟检查，其中有向预设用户发送私信的代码；quick_publish.py 也有外部副作用。
 

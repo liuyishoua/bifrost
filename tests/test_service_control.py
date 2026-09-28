@@ -6,8 +6,6 @@ from pathlib import Path
 import sys
 
 from app_registry import AppRegistry
-from integrations.base import IntegrationError
-
 from service_control import Controller, ServiceError
 
 
@@ -15,7 +13,16 @@ class ServiceControlTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.control = Controller(self.temp.name)
+        root = Path(self.temp.name)
+        for app_id in ("douyin", "ticket"):
+            directory = root / "apps" / app_id
+            directory.mkdir(parents=True)
+            (directory / "app.yaml").write_text(
+                f"schema: 1\nid: {app_id}\nname: {app_id}\nstart: [bin/app, '${{PORT}}']\n")
+        registry = AppRegistry(root / "apps", root / "runtime")
+        with patch("app_registry.port_available", return_value=True):
+            registry.refresh()
+        self.control = Controller(root / "runtime", registry)
 
     def test_existing_port_never_starts_another_instance(self):
         with patch.object(self.control, "_listening", return_value=True), patch.object(self.control, "_owner", return_value=None):
@@ -239,7 +246,7 @@ class ServiceControlTests(unittest.TestCase):
         with patch.object(control, "_listening", return_value=True), \
              patch.object(control, "_owner", return_value=owner), \
              patch.object(control, "_ready", return_value=True), \
-             patch("service_control.read_json", side_effect=IntegrationError("无法读取")):
+             patch("service_control.read_json", side_effect=ServiceError("无法读取")):
             with self.assertRaisesRegex(ServiceError, "无法读取"):
                 control.operate("weixin", "stop")
         owner.send_signal.assert_not_called()

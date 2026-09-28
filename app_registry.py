@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import re
 import socket
@@ -13,14 +14,15 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from apps import App, LEGACY_APPS
+from apps import App
 
 
 ID_RE = re.compile(r"[a-z][a-z0-9_-]{1,31}\Z")
 PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
-FIELDS = {"schema", "id", "name", "description", "build", "start", "activity_path", "ready_path"}
+FIELDS = {"schema", "id", "name", "description", "build", "start", "activity_path", "ready_path", "internal_port", "data_dir"}
 INTERNAL_PORTS = range(10000, 11000)
 EXTERNAL_PORTS = range(9000, 10000)
+PLATFORM_PORTS = {8080, 8081, 8443, 8790}
 
 
 def port_available(port: int) -> bool:
@@ -43,7 +45,7 @@ class AppRegistry:
         self.runtime = Path(runtime)
         self.public_origin = public_origin.rstrip("/")
         self.lock = threading.RLock()
-        self.records = dict(LEGACY_APPS)
+        self.records: dict[str, App] = {}
         self.errors: dict[str, str] = {}
         self.pinned = self._load_pinned()
         self.ports = self._load_ports()
@@ -66,12 +68,21 @@ class AppRegistry:
         temp.replace(target)
 
     def _allocated(self, app: App) -> App:
+        if app.port in PLATFORM_PORTS:
+            raise ManifestError("internal_port 与平台端口冲突")
         if app.id in self.ports:
             internal, external = self.ports[app.id]
+            if app.port and app.port != internal:
+                raise ManifestError("internal_port 与已分配端口不一致")
+            if internal == external or internal in PLATFORM_PORTS:
+                raise ManifestError("已分配端口冲突")
         else:
             reserved = {port for pair in self.ports.values() for port in pair}
-            reserved.update(legacy.port for legacy in LEGACY_APPS.values())
-            internal = next((port for port in INTERNAL_PORTS if port not in reserved and port_available(port)), None)
+            internal = app.port or next((port for port in INTERNAL_PORTS if port not in reserved and port_available(port)), None)
+            if app.port and app.port in reserved:
+                raise ManifestError("internal_port 已被其他应用使用")
+            if internal is not None:
+                reserved.add(internal)
             external = next((port for port in EXTERNAL_PORTS if port not in reserved and port_available(port)), None)
             if internal is None or external is None:
                 raise ManifestError("没有可用端口")
@@ -145,8 +156,6 @@ class AppRegistry:
         app_id = value.get("id")
         if type(value.get("schema")) is not int or value["schema"] != 1 or app_id != directory.name or not ID_RE.fullmatch(str(app_id)):
             raise ManifestError("schema 或应用 ID 不正确")
-        if app_id in LEGACY_APPS:
-            raise ManifestError("应用 ID 与现有应用重复")
         name = value.get("name")
         description = value.get("description", "")
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
@@ -157,9 +166,17 @@ class AppRegistry:
         if not any("${PORT}" in arg for arg in command):
             raise ManifestError("start 必须使用 ${PORT} 接收平台端口")
         build = self._argv(value["build"], "build") if "build" in value else ()
-        executable = (directory / command[0]).resolve()
-        if not executable.is_relative_to(directory.resolve()):
-            raise ManifestError("启动文件必须位于应用目录内")
+        internal_port = value.get("internal_port", 0)
+        if type(internal_port) is not int or internal_port and not 1024 <= internal_port <= 65535:
+            raise ManifestError("internal_port 不正确")
+        configured_data_dir = value.get("data_dir", ".runtime")
+        if (not isinstance(configured_data_dir, str) or not configured_data_dir or
+                "\0" in configured_data_dir or Path(configured_data_dir).is_absolute()):
+            raise ManifestError("data_dir 必须是应用目录内的相对路径")
+        data_dir = (directory / configured_data_dir).resolve()
+        if not data_dir.is_relative_to(directory.resolve()):
+            raise ManifestError("data_dir 必须位于应用目录内")
+        executable = Path(os.path.normpath(str(directory.resolve() / command[0])))
         origin = urlsplit(self.public_origin)
         if origin.scheme not in ("http", "https") or not origin.hostname:
             raise ManifestError("平台访问地址无效")
@@ -168,13 +185,13 @@ class AppRegistry:
         if any(not isinstance(path, str) or path and not path.startswith("/")
                for path in (ready_path, activity_path)):
             raise ManifestError("状态路径必须以 / 开头")
-        return App(app_id, name.strip(), description, "/", 0, directory.resolve(),
-                   directory.resolve() / ".runtime", ready_path,
+        return App(app_id, name.strip(), description, "/", internal_port, directory.resolve(),
+                   data_dir, ready_path,
                    (str(executable), *command[1:]), "manifest", build, 0, "", activity_path)
 
     def refresh(self) -> None:
         with self.lock:
-            records = dict(LEGACY_APPS)
+            records = {}
             errors = {}
             for directory in sorted(self.applications_dir.iterdir()) if self.applications_dir.is_dir() else ():
                 if not directory.is_dir() or not (directory / "app.yaml").is_file():

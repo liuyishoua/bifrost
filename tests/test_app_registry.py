@@ -39,6 +39,22 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         self.assertEqual(app.kind, "manifest")
         self.assertFalse((self.apps / "weixin" / ".bifrost").exists())
 
+    def test_existing_python_app_keeps_configured_port_data_and_interpreter(self):
+        env = self.root / "venv" / "bin"
+        env.mkdir(parents=True)
+        real_python = self.root / "python-runtime"
+        real_python.write_text("python")
+        (env / "python").symlink_to(real_python)
+        self.manifest("existing", "schema: 1\nid: existing\nname: Existing\n"
+                      "internal_port: 8766\ndata_dir: datas/web\n"
+                      "start: [../../venv/bin/python, -m, web, --port, '${PORT}', --data-dir, '${DATA_DIR}']\n")
+        registry = AppRegistry(self.apps, self.runtime)
+        registry.refresh()
+        app = registry.get("existing")
+        self.assertEqual(app.port, 8766)
+        self.assertEqual(app.data_dir, (self.apps / "existing" / "datas" / "web").resolve())
+        self.assertEqual(app.command[0], str(self.root.resolve() / "venv" / "bin" / "python"))
+
     def test_invalid_app_does_not_hide_valid_app(self):
         self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app, '${PORT}']\n")
         self.manifest("broken", "schema: 1\nid: ../broken\nname: 错误\nstart: [bin/app]\n")
@@ -60,12 +76,11 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         self.assertIn("badbytes", registry.errors)
         self.assertIn("badnul", registry.errors)
 
-    def test_rejects_invalid_command_and_duplicate_legacy_id(self):
+    def test_rejects_invalid_command(self):
         cases = {
             "badargv": "schema: 1\nid: badargv\nname: bad\nstart: 'bin/app --port 4'\n",
             "badplaceholder": "schema: 1\nid: badplaceholder\nname: bad\nstart: [bin/app, '${HOME}']\n",
             "badpath": "schema: 1\nid: badpath\nname: bad\nstart: [../escape]\n",
-            "ticket": "schema: 1\nid: ticket\nname: bad\nstart: [bin/app]\n",
             "badport": "schema: 1\nid: badport\nname: bad\nstart: [bin/app]\n",
             "boolschema": "schema: true\nid: boolschema\nname: bad\nstart: [bin/app, '${PORT}']\n",
         }
@@ -75,7 +90,6 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
         registry.refresh()
         for directory in cases:
             self.assertIn(directory, registry.errors)
-        self.assertEqual(registry.get("ticket").kind, "legacy")
 
     def test_port_assignment_survives_restart_and_pinned_manifest_edit(self):
         self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\nstart: [bin/app, '${PORT}']\n")
@@ -101,6 +115,26 @@ start: [.bifrost/bin/weixin, --port, '${PORT}']
             registry = AppRegistry(self.apps, self.runtime)
             registry.refresh()
         self.assertEqual(registry.get("weixin").port, 15001)
+
+    def test_configured_internal_port_is_not_reused_for_gateway(self):
+        self.manifest("weixin", "schema: 1\nid: weixin\nname: 微信\ninternal_port: 9000\n"
+                      "start: [bin/app, '${PORT}']\n")
+        registry = AppRegistry(self.apps, self.runtime)
+        registry.refresh()
+        app = registry.get("weixin")
+        self.assertEqual(app.port, 9000)
+        self.assertEqual(app.external_port, 9001)
+
+    def test_rejects_platform_ports_even_when_listener_is_not_running(self):
+        for port in (8080, 8081, 8790, 8443):
+            with self.subTest(port=port):
+                name = f"app{port}"
+                self.manifest(name, f"schema: 1\nid: {name}\nname: App\n"
+                              f"internal_port: {port}\nstart: [bin/app, '${{PORT}}']\n")
+        registry = AppRegistry(self.apps, self.runtime)
+        registry.refresh()
+        for port in (8080, 8081, 8790, 8443):
+            self.assertIn(f"app{port}", registry.errors)
 
 
 if __name__ == "__main__":

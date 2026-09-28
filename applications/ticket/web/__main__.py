@@ -17,6 +17,20 @@ from .service import Workbench, clean
 STATIC = Path(__file__).parent / 'static'
 
 
+def activity_snapshot(state):
+    try:
+        tasks, accounts = state['tasks'], state['accounts']
+        if not isinstance(tasks, list) or not isinstance(accounts, list):
+            raise ValueError('invalid activity state')
+        active = (any(t.get('status') in ('starting', 'waiting', 'querying', 'submitting', 'queueing', 'stopping', 'reserved')
+                      for t in tasks) or
+                  any(a.get('busy') or a.get('login', {}).get('status') in ('starting', 'waiting', 'scanned', 'verifying')
+                      for a in accounts))
+    except (TypeError, KeyError, AttributeError, ValueError):
+        return {'idle': False, 'reason': '票务活动状态不可读'}
+    return {'idle': not active, 'reason': '票务任务或账号正在工作' if active else ''}
+
+
 def make_server(workbench, port=8767):
     csrf = secrets.token_urlsafe(32)
 
@@ -46,6 +60,13 @@ def make_server(workbench, port=8767):
             if not self.allowed():
                 return self.send({'error': '仅允许本机访问'}, status=403)
             path = urlparse(self.path).path
+            if path == '/.well-known/bifrost/ready':
+                return self.send({'ready': True})
+            if path == '/.well-known/bifrost/activity':
+                try:
+                    return self.send(activity_snapshot(workbench.state()))
+                except Exception:
+                    return self.send({'idle': False, 'reason': '票务活动状态不可读'}, status=503)
             if path == '/api/state':
                 return self.send(workbench.state())
             if path == '/api/stations':

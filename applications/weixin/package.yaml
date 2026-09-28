@@ -1,0 +1,8 @@
+schema: 1
+targets:
+  windows-x64:
+    artifact: .bifrost/packages/windows-x64/weixin.exe
+    build: ["${PYTHON}", package_build.py, windows-x64, "${OUTPUT}"]
+  macos-arm64:
+    artifact: .bifrost/packages/macos-arm64/weixin.app.zip
+    build: ["${PYTHON}", package_build.py, macos-arm64, "${OUTPUT}"]

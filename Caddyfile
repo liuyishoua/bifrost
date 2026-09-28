@@ -19,39 +19,6 @@ http://127.0.0.1:8080 {
 	handle @internal {
 		respond 404
 	}
-	redir /ticket /ticket/ 308
-	redir /douyin /douyin/ 308
-
-	handle /ticket/* {
-		route {
-			import clean_request
-			forward_auth 127.0.0.1:8790 {
-				uri /internal/auth/ticket
-				header_up Host 127.0.0.1:8790
-			}
-			uri strip_prefix /ticket
-			reverse_proxy 127.0.0.1:8767 {
-				header_up Host 127.0.0.1:8767
-				header_up -Cookie
-				header_up X-Forwarded-Prefix /ticket
-			}
-		}
-	}
-	handle /douyin/* {
-		route {
-			import clean_request
-			forward_auth 127.0.0.1:8790 {
-				uri /internal/auth/douyin
-				header_up Host 127.0.0.1:8790
-			}
-			uri strip_prefix /douyin
-			reverse_proxy 127.0.0.1:8766 {
-				header_up Host 127.0.0.1:8766
-				header_up -Cookie
-				header_up X-Forwarded-Prefix /douyin
-			}
-		}
-	}
 	handle {
 		reverse_proxy 127.0.0.1:8790 {
 			header_up Host 127.0.0.1:8790

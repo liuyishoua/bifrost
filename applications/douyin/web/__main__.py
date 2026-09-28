@@ -1,9 +1,9 @@
 import argparse
 import atexit
-import fcntl
 from pathlib import Path
 from .app import create_app
 from .douyin import DemoAdapter
+from .process_lock import acquire_exclusive
 
 
 def main():
@@ -16,8 +16,8 @@ def main():
     data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     instance_lock = (data_dir / 'server.lock').open('w')
     try:
-        fcntl.flock(instance_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+        acquire_exclusive(instance_lock)
+    except OSError:
         parser.error('这个数据目录已有服务运行，不能重复启动执行器')
     app = create_app(data_dir, adapter=DemoAdapter() if args.demo else None)
     atexit.register(app.extensions['console'].close)

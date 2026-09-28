@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from apps import App, LEGACY_APPS
+from apps import App
 from gateway_routes import GatewayError, GatewayRoutes, render_fragments
 
 
@@ -26,15 +26,15 @@ class GatewayRouteTests(unittest.TestCase):
             self.assertIn("reverse_proxy 127.0.0.1:10000", rendered)
             self.assertNotIn("strip_prefix", rendered)
 
-    def test_legacy_apps_do_not_get_duplicate_sites(self):
-        local, public = render_fragments(tuple(LEGACY_APPS.values()), "http://127.0.0.1:8080")
+    def test_no_apps_get_no_sites(self):
+        local, public = render_fragments((), "http://127.0.0.1:8080")
         self.assertEqual(local.strip(), "")
         self.assertEqual(public.strip(), "")
 
     def test_empty_fragments_exist_before_caddy_starts(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = Path(directory)
-            GatewayRoutes(runtime, "http://127.0.0.1:8080", None).sync(tuple(LEGACY_APPS.values()))
+            GatewayRoutes(runtime, "http://127.0.0.1:8080", None).sync(())
             self.assertTrue((runtime / "apps.local.caddy").is_file())
             self.assertTrue((runtime / "apps.public.caddy").is_file())
 

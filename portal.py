@@ -12,12 +12,13 @@ import time
 from urllib.parse import quote, urlsplit
 import hashlib
 
-from flask import Flask, abort, g, make_response, redirect, render_template_string, request
+from flask import Flask, abort, g, make_response, redirect, render_template_string, request, send_file
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 from waitress import serve
 
 from app_registry import AppRegistry
+from app_packaging import PackageError, PackageManager, TARGETS
 from gateway_routes import GatewayError, GatewayRoutes
 from service_control import Controller, ServiceError
 
@@ -39,9 +40,11 @@ CREATE TABLE IF NOT EXISTS attempts (kind TEXT NOT NULL, key TEXT NOT NULL, crea
 CREATE INDEX IF NOT EXISTS attempts_lookup ON attempts(kind,key,created_at);
 """
 PAGE = """<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>
-<title>{{ title }} · Bifrost</title><style>
-:root{font-family:system-ui,sans-serif;color:#273149;background:#f5f7fb}body{margin:0}header{background:#1c2750;color:white;padding:16px max(24px,calc((100vw - 980px)/2));display:flex;justify-content:space-between;align-items:center}header a{color:white;margin-left:18px}main{max-width:980px;margin:42px auto;padding:0 24px}h1{font-size:30px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}.card,form.panel{background:white;border:1px solid #e1e5ed;border-radius:14px;padding:24px;box-shadow:0 4px 18px #1c27500a}.card p{color:#65718a}label{display:block;margin:14px 0}input[type=text],input[type=password]{display:block;padding:11px;margin-top:5px;box-sizing:border-box;width:100%;border:1px solid #bac3d3;border-radius:8px}button,.button{display:inline-block;background:#315ed1;color:white;border:0;border-radius:8px;padding:10px 16px;text-decoration:none;cursor:pointer}button.secondary{background:#5f6982}form.inline{display:inline}.notice{padding:12px 16px;background:#fff5d9;border-radius:8px;margin:14px 0}.muted{color:#65718a}table{width:100%;border-collapse:collapse;background:white}td,th{padding:12px;text-align:left;border-bottom:1px solid #e1e5ed}fieldset{border:0;padding:0}small{color:#65718a}
-</style><header><b>Bifrost</b><nav>{% if user %}<a href='/'>应用</a><a href='/settings'>个人设置</a>{% if user['role']=='admin' %}<a href='/admin'>管理</a><a href='/audit'>记录</a>{% endif %}<form class=inline method=post action='/logout'><input type=hidden name=csrf value='{{ csrf_token }}'><button class=secondary>退出</button></form>{% endif %}</nav></header><main><h1>{{ title }}</h1>{% if message %}<p class=notice>{{ message }}</p>{% endif %}{{ body|safe }}</main></html>"""
+<title>{{ title }} · 彩虹桥</title><link rel=stylesheet href='/static/portal.css'>
+<div class='site-shell {{ "auth-shell" if not user else "" }}'>
+<header class=site-header><div class=header-inner><a class=brand href='/' aria-label='彩虹桥首页'><span class=brand-mark aria-hidden=true><i></i><i></i><i></i></span><span><strong>彩虹桥</strong><small>BIFROST</small></span></a>
+<nav class=site-nav aria-label=主导航>{% if user %}<a href='/' class='{{ "active" if request.path == "/" else "" }}'>应用</a><a href='/settings' class='{{ "active" if request.path == "/settings" else "" }}'>个人设置</a>{% if user['role']=='admin' %}<a href='/admin' class='{{ "active" if request.path == "/admin" else "" }}'>账号管理</a><a href='/admin/packages' class='{{ "active" if request.path.startswith("/admin/packages") else "" }}'>应用打包</a><a href='/audit' class='{{ "active" if request.path == "/audit" else "" }}'>操作记录</a>{% endif %}<span class=user-chip>{{ user['username'] }}</span><form class=inline method=post action='/logout'><input type=hidden name=csrf value='{{ csrf_token }}'><button class='quiet logout' type=submit>退出</button></form>{% else %}<a href='/login' class='{{ "active" if request.path == "/login" else "" }}'>登录</a><a href='/register' class='{{ "active" if request.path == "/register" else "" }}'>注册</a>{% endif %}</nav></div></header>
+<main class='page-main {{ "auth-main" if not user else "" }}'><div class='page-heading'><div><p class=eyebrow>{{ "WELCOME TO BIFROST" if not user else "WORKSPACE / BIFROST" }}</p><h1>{{ title }}</h1>{% if subtitle %}<p class=page-subtitle>{{ subtitle }}</p>{% endif %}</div></div>{% if message %}<p class=notice role=alert>{{ message }}</p>{% endif %}{{ body|safe }}</main><footer class=site-footer><span>彩虹桥 · 让工作从这里开始</span><span>清晰、安全地连接你的应用</span></footer></div></html>"""
 
 
 def create_app(runtime=None, registry=None):
@@ -74,7 +77,9 @@ def create_app(runtime=None, registry=None):
     gateway = GatewayRoutes(runtime, public_origin, os.environ.get("BIFROST_CADDY_CONFIG"))
     gateway.sync(registry.all(), reload=False)
     controller = Controller(runtime, registry)
+    package_manager = PackageManager(runtime, registry)
     app.extensions["controller"] = controller
+    app.extensions["package_manager"] = package_manager
     app.extensions["app_registry"] = registry
     app.extensions["gateway_routes"] = gateway
     last_discovery_errors = {}
@@ -119,14 +124,15 @@ def create_app(runtime=None, registry=None):
     def form_csrf():
         return f'<input type=hidden name=csrf value="{escape(csrf())}">'
 
-    def page(title, body, message=""):
-        response = make_response(render_template_string(PAGE, title=title, body=body, message=message, user=current(), csrf_token=csrf()))
+    def page(title, body, message="", subtitle=""):
+        response = make_response(render_template_string(PAGE, title=title, body=body, message=message,
+                                                        subtitle=subtitle, user=current(), csrf_token=csrf()))
         response.headers["Cache-Control"] = "no-store"
         return response
 
     def allowed_next(value):
         destinations = {"/"}
-        destinations.update(a.path if a.kind == "legacy" else a.origin + "/" for a in registry.all())
+        destinations.update(a.origin + "/" for a in registry.all())
         return value if value in destinations else "/"
 
     def require_user():
@@ -202,11 +208,11 @@ def create_app(runtime=None, registry=None):
                     audit(conn, name, "register", name)
                 except sqlite3.IntegrityError:
                     return page("注册", register_form(), "账号名已存在"), 409
-            return page("待审批", "<p>注册成功，请等待管理员审批并分配应用权限。</p><a href='/login'>去登录</a>")
+            return page("待审批", "<div class='panel auth-panel success-panel'><span class=success-symbol aria-hidden=true>✓</span><h2>注册申请已提交</h2><p>请等待管理员审批并分配应用权限。</p><a class=button href='/login'>去登录</a></div>")
         return page("注册", register_form(), "页面已更新，请重新填写" if request.args.get("expired") else "")
 
     def register_form():
-        return f"<form class=panel method=post>{form_csrf()}<label>账号<input name=username type=text required minlength=3 maxlength=32></label><label>密码<input name=password type=password required minlength=10 maxlength=128></label><button>注册</button> <a href='/login'>已有账号</a></form>"
+        return f"<form class='panel auth-panel' method=post>{form_csrf()}<p class=form-intro>创建账号后，管理员会为你开通应用权限。</p><label>账号<input name=username type=text autocomplete=username required minlength=3 maxlength=32 placeholder='3–32 位小写字母、数字或下划线'></label><label>密码<input name=password type=password autocomplete=new-password required minlength=10 maxlength=128 placeholder='至少 10 位'></label><button class=full-button>创建账号</button><p class=form-foot>已有账号？<a href='/login'>直接登录</a></p></form>"
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -227,7 +233,7 @@ def create_app(runtime=None, registry=None):
         return page("登录", login_form(target), "页面已更新，请重新填写" if request.args.get("expired") else "")
 
     def login_form(target):
-        return f"<form class=panel method=post>{form_csrf()}<input type=hidden name=next value='{escape(target)}'><label>账号<input name=username type=text required></label><label>密码<input name=password type=password required></label><label><input name=remember type=checkbox value=1> 保持登录 30 天</label><button>登录</button> <a href='/register'>注册</a></form>"
+        return f"<form class='panel auth-panel' method=post>{form_csrf()}<input type=hidden name=next value='{escape(target)}'><p class=form-intro>登录后查看你有权限使用的应用。</p><label>账号<input name=username type=text autocomplete=username required placeholder='请输入账号'></label><label>密码<input name=password type=password autocomplete=current-password required placeholder='请输入密码'></label><label class=check-label><input name=remember type=checkbox value=1> 保持登录 30 天</label><button class=full-button>进入工作空间 <span aria-hidden=true>↗</span></button><p class=form-foot>还没有账号？<a href='/register'>申请注册</a></p></form>"
 
     @app.post("/logout")
     def logout():
@@ -251,15 +257,23 @@ def create_app(runtime=None, registry=None):
         for item in registry.all():
             if user["role"] != "admin" and item.id not in grants:
                 continue
-            details = ""
+            state, reason = controller.status(item.id)
+            status_text = {"running": "运行中", "stopped": "未启动", "starting": "正在启停", "unavailable": "暂不可用"}.get(state, state)
+            status = f"<span class='status status-{escape(state)}'><span class=status-dot></span>{status_text}</span>"
+            if reason:
+                status += f"<p class=status-reason>{escape(reason)}</p>"
+            destination = item.origin + "/"
+            primary = (f"<a class='button card-link' href='{escape(destination)}'>进入应用 <span aria-hidden=true>↗</span></a>" if state == "running" else
+                       "<span class='button card-link disabled' aria-disabled=true>服务尚未就绪</span>")
+            controls = ""
             if user["role"] == "admin":
-                state, reason = controller.status(item.id)
                 action = "stop" if state == "running" else "start"
-                button = f"<form class=inline method=post action='/admin/service/{item.id}/{action}'>{form_csrf()}<button class=secondary>{'关闭' if action=='stop' else '启动'}</button></form>" if state in ("running", "stopped") else ""
-                details = f"<p>状态：{escape(state)} {escape(reason)}</p>{button}"
-            destination = item.path if item.kind == "legacy" else item.origin + "/"
-            cards.append(f"<article class=card><h2>{escape(item.name)}</h2><p>{escape(item.description)}</p><a class=button href='{escape(destination)}'>进入应用</a>{details}</article>")
-        return page("我的应用", "<p class=muted>同一应用的获授权用户共用业务实例与数据。</p><div class=grid>" + "".join(cards) + "</div>")
+                controls = f"<form class=inline method=post action='/admin/service/{item.id}/{action}'>{form_csrf()}<button class=quiet>{'关闭服务' if action=='stop' else '启动服务'}</button></form>" if state in ("running", "stopped") else ""
+            icon = "票" if item.id == "ticket" else "抖" if item.id == "douyin" else "应"
+            cards.append(f"<article class='card app-card'><div class=app-card-top><span class='app-icon app-icon-{escape(item.id)}' aria-hidden=true>{icon}</span>{status}</div><div class=app-card-copy><h2>{escape(item.name)}</h2><p>{escape(item.description)}</p></div><div class=app-card-actions>{primary}{controls}</div></article>")
+        body = ("<div class=grid>" + "".join(cards) + "</div>" if cards else
+                "<div class='card empty-state'><span aria-hidden=true>◇</span><h2>还没有可用应用</h2><p>请联系管理员为你的账号分配应用权限。</p></div>")
+        return page("我的应用", body, subtitle="选择应用，继续你的工作。服务与数据由获授权用户共享。")
 
     @app.route("/settings", methods=["GET", "POST"])
     def settings():
@@ -279,7 +293,7 @@ def create_app(runtime=None, registry=None):
                     audit(conn, user["username"], "password_change", user["username"])
                 response = issue(redirect("/"), user["id"])
                 return response
-        return page("个人设置", f"<form class=panel method=post>{form_csrf()}<label>当前密码<input name=old type=password required></label><label>新密码<input name=new type=password minlength=10 maxlength=128 required></label><button>修改密码</button></form>", message)
+        return page("个人设置", f"<form class='panel settings-panel' method=post>{form_csrf()}<h2>修改密码</h2><p class=form-intro>新密码至少 10 位。修改后，其他登录会话将退出。</p><label>当前密码<input name=old type=password autocomplete=current-password required></label><label>新密码<input name=new type=password autocomplete=new-password minlength=10 maxlength=128 required></label><button>保存新密码</button></form>", message, subtitle="管理你的账号安全。")
 
     @app.get("/admin")
     def admin():
@@ -305,13 +319,14 @@ def create_app(runtime=None, registry=None):
                 audit(conn, actor["username"], "gateway_reload_error", gateway_error)
             users = conn.execute("SELECT id,username,role,status,must_change FROM users ORDER BY id DESC").fetchall()
             grants = {(r[0], r[1]) for r in conn.execute("SELECT user_id,app_id FROM grants")}
-        rows = []
+        cards = []
         for user in users:
-            controls = f"<form method=post action='/admin/user/{user['id']}'>{form_csrf()}<select name=status><option value=pending>待审批</option><option value=active {'selected' if user['status']=='active' else ''}>启用</option><option value=disabled {'selected' if user['status']=='disabled' else ''}>禁用</option></select> "
-            controls += " ".join(f"<label><input type=checkbox name=grant value='{a.id}' {'checked' if (user['id'],a.id) in grants else ''}> {escape(a.name)}</label>" for a in registry.all())
-            controls += "<button>保存</button></form>"
-            controls += f"<form method=post action='/admin/reset/{user['id']}'>{form_csrf()}<label>临时密码<input type=password name=password minlength=10 maxlength=128 required></label><button class=secondary>重置密码</button></form>"
-            rows.append(f"<tr><td>{escape(user['username'])}</td><td>{escape(user['role'])}</td><td>{controls}</td></tr>")
+            state_label = {"pending": "待审批", "active": "已启用", "disabled": "已禁用"}[user["status"]]
+            controls = f"<form class=user-form method=post action='/admin/user/{user['id']}'>{form_csrf()}<div class=user-fields><label>账号状态<select name=status><option value=pending {'selected' if user['status']=='pending' else ''}>待审批</option><option value=active {'selected' if user['status']=='active' else ''}>启用</option><option value=disabled {'selected' if user['status']=='disabled' else ''}>禁用</option></select></label><fieldset><legend>应用权限</legend><div class=grant-list>"
+            controls += "".join(f"<label class=check-label><input type=checkbox name=grant value='{a.id}' {'checked' if (user['id'],a.id) in grants else ''}> {escape(a.name)}</label>" for a in registry.all())
+            controls += "</div></fieldset></div><button>保存设置</button></form>"
+            controls += f"<form class=reset-form method=post action='/admin/reset/{user['id']}'>{form_csrf()}<label>重置密码<input type=password name=password autocomplete=new-password minlength=10 maxlength=128 required placeholder='输入至少 10 位的临时密码'></label><button class=quiet>重置</button></form>"
+            cards.append(f"<article class='card user-card'><div class=user-card-heading><div><h2>{escape(user['username'])}</h2><span class=role-label>{'管理员' if user['role']=='admin' else '普通用户'}</span></div><span class='status status-{escape(user['status'])}'><span class=status-dot></span>{state_label}</span></div>{controls}</article>")
         discovered = "".join(f"<li>{escape(item.name)} · {escape(item.origin or item.path)}</li>"
                              for item in registry.all())
         problems = "".join(f"<li>{escape(key)}：{escape(error)}</li>"
@@ -319,8 +334,78 @@ def create_app(runtime=None, registry=None):
         if gateway_error:
             problems += f"<li>网关：{escape(gateway_error)}</li>"
         body = ("<section class=card><h2>应用接入</h2><ul>" + discovered + problems + "</ul></section>"
-                "<table><tr><th>账号</th><th>角色</th><th>操作</th></tr>" + "".join(rows) + "</table>")
-        return page("账号管理", body)
+                "<div class=user-grid>" + "".join(cards) + "</div>")
+        return page("账号管理", body, subtitle="审批账号并分配应用权限。")
+
+    @app.get("/admin/packages")
+    def packages_page():
+        _, response = require_admin()
+        if response:
+            return response
+        registry.refresh()
+        sections = []
+        for item in registry.all():
+            rows = []
+            for target, label in TARGETS.items():
+                result = package_manager.status(item.id, target)
+                state = result["state"]
+                action = ""
+                if state == "ready":
+                    action = (f"<a class='button package-download' href='/admin/packages/{item.id}/{target}/download'>下载安装包</a>")
+                    if result.get("can_build"):
+                        action += (f"<form method=post action='/admin/packages/{item.id}/{target}/build'>"
+                                   f"{form_csrf()}<input type=hidden name=force value=1>"
+                                   "<button class=quiet>重新构建</button></form>")
+                    action = f"<div class=package-actions>{action}</div>"
+                elif state in ("missing", "failed"):
+                    action = (f"<form method=post action='/admin/packages/{item.id}/{target}/build'>"
+                              f"{form_csrf()}<button class=quiet>开始构建</button></form>")
+                rows.append(f"<tr><td>{escape(label)}</td><td>{escape(result['reason'])}</td><td>{action}</td></tr>")
+                if state == "failed":
+                    log = package_manager.log(item.id, target)
+                    if log:
+                        rows.append(f"<tr><td colspan=3><details><summary>查看构建日志</summary><pre class=package-log>{escape(log)}</pre></details></td></tr>")
+            sections.append(f"<section class='card package-card'><h2>{escape(item.name)}</h2>"
+                            f"<div class=table-wrap><table><thead><tr><th>目标系统</th><th>状态</th><th>操作</th></tr></thead>"
+                            f"<tbody>{''.join(rows)}</tbody></table></div></section>")
+        body = ("<p class=package-hint>已有且与当前代码匹配的安装包可直接下载；缺少时点击构建。"
+                "构建配方由应用提供，平台不会把服务端代码伪装成手机安装包。</p>"
+                "<p><a href='/admin/packages'>刷新构建状态</a></p>" +
+                ("".join(sections) if sections else "<div class='card empty-state'>还没有接入应用</div>"))
+        return page("应用打包", body, subtitle="选择应用和目标系统，构建完成后下载。")
+
+    @app.post("/admin/packages/<app_id>/<target>/build")
+    def package_build(app_id, target):
+        actor, response = require_admin()
+        if response:
+            return response
+        if app_id not in apps() or target not in TARGETS:
+            abort(404)
+        try:
+            result = package_manager.queue(app_id, target, force=request.form.get("force") == "1")
+        except PackageError as exc:
+            with db() as conn:
+                audit(conn, actor["username"], "package_error", f"{app_id}:{target}:{exc}")
+            return page("应用打包", "<a href='/admin/packages'>返回打包页</a>", escape(str(exc))), 409
+        with db() as conn:
+            audit(conn, actor["username"], "package_request", f"{app_id}:{target}:{result}")
+        return redirect("/admin/packages", code=303)
+
+    @app.get("/admin/packages/<app_id>/<target>/download")
+    def package_download(app_id, target):
+        actor, response = require_admin()
+        if response:
+            return response
+        if app_id not in apps() or target not in TARGETS:
+            abort(404)
+        try:
+            artifact = package_manager.artifact(app_id, target)
+        except PackageError:
+            abort(404)
+        with db() as conn:
+            audit(conn, actor["username"], "package_download", f"{app_id}:{target}")
+        return send_file(artifact, as_attachment=True, download_name=artifact.name,
+                         mimetype="application/octet-stream")
 
     @app.post("/admin/user/<int:user_id>")
     def update_user(user_id):
@@ -370,9 +455,9 @@ def create_app(runtime=None, registry=None):
             return response
         with db() as conn:
             rows = conn.execute("SELECT actor,action,target,created_at FROM audit ORDER BY id DESC LIMIT 100").fetchall()
-        body = "<table><tr><th>时间</th><th>操作者</th><th>操作</th><th>对象</th></tr>" + "".join(
-            f"<tr><td>{datetime.fromtimestamp(r['created_at'],timezone.utc).isoformat()}</td><td>{escape(r['actor'])}</td><td>{escape(r['action'])}</td><td>{escape(r['target'])}</td></tr>" for r in rows) + "</table>"
-        return page("操作记录", body)
+        body = "<div class='card table-wrap'><table><thead><tr><th>时间（UTC）</th><th>操作者</th><th>操作</th><th>对象</th></tr></thead><tbody>" + "".join(
+            f"<tr><td>{datetime.fromtimestamp(r['created_at'],timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}</td><td>{escape(r['actor'])}</td><td>{escape(r['action'])}</td><td>{escape(r['target'])}</td></tr>" for r in rows) + "</tbody></table></div>"
+        return page("操作记录", body, subtitle="查看最近 100 条账号和服务操作。")
 
     @app.post("/admin/service/<app_id>/<action>")
     def service_operation(app_id, action):
@@ -401,30 +486,25 @@ def create_app(runtime=None, registry=None):
         method = request.headers.get("X-Forwarded-Method", "GET").upper()
         original = request.headers.get("X-Forwarded-Uri", "")
         item = apps()[app_id]
-        expected = item.path if item.kind == "legacy" else item.origin + "/"
+        expected = item.origin + "/"
         verify = request.headers.get("X-Bifrost-Verification") == "1"
         if verify:
             if app_id != "douyin" or not (original.split("?", 1)[0].startswith("/verification-request/") or
                     original.split("?", 1)[0] in ("/verification-frame", "/static/verification-frame.js")):
                 app.logger.warning("auth_path_rejected app=%s path=%s verify=%s", app_id, original.split("?", 1)[0], verify)
                 abort(403)
-        elif item.kind == "manifest":
+        else:
             forwarded = urlsplit(item.origin)
             path = original.split("?", 1)[0]
             if (request.headers.get("X-Forwarded-Host") != forwarded.netloc or
                     request.headers.get("X-Forwarded-Proto") != forwarded.scheme or
                     not path.startswith("/") or path.startswith("//") or ".." in path.split("/")):
                 abort(403)
-        elif not (original.split("?", 1)[0] == expected[:-1] or original.split("?", 1)[0].startswith(expected)):
-            app.logger.warning("auth_path_rejected app=%s path=%s verify=%s", app_id,
-                               original.split("?", 1)[0], verify)
-            abort(403)
         user = current()
         if not user:
             accept = request.headers.get("Accept", "")
             if method in ("GET", "HEAD") and "text/html" in accept and not verify:
-                destination = (public_origin + "/login?next=" + quote(expected, safe="")
-                               if item.kind == "manifest" else "/login?next=" + expected)
+                destination = public_origin + "/login?next=" + quote(expected, safe="")
                 return redirect(destination)
             return "未登录", 401
         if user["must_change"]:
@@ -439,10 +519,21 @@ def create_app(runtime=None, registry=None):
             return "服务正在启停", 503
         if method not in ("GET", "HEAD", "OPTIONS"):
             source = request.headers.get("Origin", "")
-            required = verify_origin if verify else item.origin if item.kind == "manifest" else public_origin
+            required = verify_origin if verify else item.origin
             if source != required:
                 return "请求来源无效", 403
         return "", 204
+
+    @app.get("/<app_id>/")
+    @app.get("/<app_id>/<path:rest>")
+    def old_app_link(app_id, rest=""):
+        item = registry.get(app_id)
+        if item is None:
+            abort(404)
+        destination = item.origin + "/" + quote(rest, safe="/")
+        if request.query_string:
+            destination += "?" + request.query_string.decode("ascii", "ignore")
+        return redirect(destination, code=308)
 
     @app.after_request
     def security_headers(response):
@@ -475,7 +566,9 @@ def main():
                          (name, password_hash(password), time.time()))
         print("管理员账号已创建")
     else:
-        serve(app, host="127.0.0.1", port=8790, threads=8)
+        serve(app, host="127.0.0.1", port=8790, threads=8,
+              trusted_proxy="127.0.0.1",
+              trusted_proxy_headers={"x-forwarded-host", "x-forwarded-proto"})
 
 
 if __name__ == "__main__":

@@ -15,8 +15,6 @@ class GatewayError(RuntimeError):
 def render_fragments(apps: tuple[App, ...], public_origin: str) -> tuple[str, str]:
     local, public = [], []
     for app in apps:
-        if app.kind != "manifest":
-            continue
         body = f"""
 \t@internal path /internal /internal/*
 \thandle @internal {{

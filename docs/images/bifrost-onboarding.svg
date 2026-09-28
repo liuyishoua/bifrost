@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="290" viewBox="0 0 1200 290" role="img" aria-labelledby="title desc">
+  <title id="title">应用接入流程</title>
+  <desc id="desc">开发者提供应用代码和 app.yaml，放进 applications 目录；门户自动发现，管理员授权并启动，用户再从门户进入独立应用。</desc>
+  <defs>
+    <style>
+      .text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #1d1d1f; }
+      .muted { fill: #6e6e73; }
+      .step { fill: #007aff; font-size: 13px; font-weight: 650; letter-spacing: 1px; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#b8c2cf" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="290" rx="28" fill="#f7f8fa"/>
+  <text class="text" x="48" y="57" font-size="25" font-weight="650">接入一个新应用，只需交付代码和启动配置</text>
+
+  <path d="M291 170 H323 M582 170 H614 M873 170 H905" fill="none" stroke="#b8c2cf" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <rect x="48" y="107" width="243" height="130" rx="20" fill="#ffffff" stroke="#e6e8ec"/>
+  <text class="text step" x="71" y="139">01  开发</text>
+  <text class="text" x="71" y="173" font-size="18" font-weight="620">自己的 HTTP 应用</text>
+  <text class="text muted" x="71" y="205" font-size="15">代码 + app.yaml</text>
+
+  <rect x="339" y="107" width="243" height="130" rx="20" fill="#ffffff" stroke="#e6e8ec"/>
+  <text class="text step" x="362" y="139">02  放入</text>
+  <text class="text" x="362" y="173" font-size="18" font-weight="620">applications/项目</text>
+  <text class="text muted" x="362" y="205" font-size="15">平台自动发现配置</text>
+
+  <rect x="630" y="107" width="243" height="130" rx="20" fill="#ffffff" stroke="#e6e8ec"/>
+  <text class="text step" x="653" y="139">03  管理</text>
+  <text class="text" x="653" y="173" font-size="18" font-weight="620">授权并启动</text>
+  <text class="text muted" x="653" y="205" font-size="15">门户管理应用开关</text>
+
+  <rect x="921" y="107" width="231" height="130" rx="20" fill="#ffffff" stroke="#d9e7f8"/>
+  <text class="text step" x="944" y="139">04  使用</text>
+  <text class="text" x="944" y="173" font-size="18" font-weight="620">点击进入应用</text>
+  <text class="text muted" x="944" y="205" font-size="15">独立进程 · 独立端口</text>
+</svg>

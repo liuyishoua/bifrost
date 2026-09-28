@@ -2,6 +2,7 @@ import io
 import os
 from html import escape
 import json
+import sqlite3
 from pathlib import Path
 from urllib.parse import urlsplit
 from flask import Flask, jsonify, request, send_file
@@ -15,6 +16,16 @@ from .verification import VERIFICATION_METHODS
 from dy_apis.douyin_im_history import HistoryError
 
 VERIFICATION_HOST = 'verification.localhost'
+ACTIVITY_QUERIES = (
+    "SELECT 1 FROM tasks WHERE status='running' LIMIT 1",
+    "SELECT 1 FROM recipients WHERE status='sending' LIMIT 1",
+    "SELECT 1 FROM task_messages WHERE status='sending' LIMIT 1",
+    "SELECT 1 FROM chat_sends WHERE status='sending' LIMIT 1",
+    "SELECT 1 FROM searches WHERE status IN ('running','pending') LIMIT 1",
+    "SELECT 1 FROM task_reply_reviews WHERE status IN ('running','pending') LIMIT 1",
+    "SELECT 1 FROM task_reply_targets WHERE status='running' LIMIT 1",
+    "SELECT 1 FROM accounts WHERE status='checking' OR qr_status IN ('starting','waiting','scanned','verifying') LIMIT 1",
+)
 
 
 def create_app(directory=None, adapter=None, background=True):
@@ -44,7 +55,10 @@ def create_app(directory=None, adapter=None, background=True):
             mounted = (request.headers.get('X-Forwarded-Prefix') == '/douyin' and
                        request.remote_addr in ('127.0.0.1', '::1'))
             portal_origin = os.environ.get('ANYDOOR_PUBLIC_ORIGIN', '').rstrip('/')
-            valid_origin = (origin == portal_origin and bool(portal_origin) if mounted else
+            app_origin = os.environ.get('BIFROST_APP_ORIGIN', '').rstrip('/')
+            valid_origin = (origin == app_origin and request.remote_addr in ('127.0.0.1', '::1')
+                            if app_origin else
+                            origin == portal_origin and bool(portal_origin) if mounted else
                             not origin or urlsplit(origin).netloc == request.host)
             if (request.headers.get('X-App-Request') != '1' or not request.is_json or
                     not valid_origin):
@@ -56,9 +70,9 @@ def create_app(directory=None, adapter=None, background=True):
             prefix = request.headers.get('X-Forwarded-Prefix', '')
             prefix = prefix if prefix == '/douyin' else ''
             tags = f'<base href="{prefix}/">'
-            for name, env in (('verification-origin', 'ANYDOOR_VERIFY_ORIGIN'), ('portal-origin', 'ANYDOOR_PUBLIC_ORIGIN')):
-                if name == 'verification-origin' and not prefix:
-                    continue
+            for name, env in (('verification-origin', 'ANYDOOR_VERIFY_ORIGIN'),
+                              ('portal-origin', 'ANYDOOR_PUBLIC_ORIGIN'),
+                              ('app-origin', 'BIFROST_APP_ORIGIN')):
                 origin = os.environ.get(env, '')
                 parsed = urlsplit(origin)
                 if parsed.scheme in ('http', 'https') and parsed.netloc and not parsed.path and not parsed.query and not parsed.fragment:
@@ -102,6 +116,24 @@ def create_app(directory=None, adapter=None, background=True):
         if not isinstance(data, dict):
             raise ValueError('请求内容必须为对象')
         return data
+
+    @app.get('/.well-known/bifrost/ready')
+    def bifrost_ready():
+        if request.remote_addr not in ('127.0.0.1', '::1'):
+            return jsonify(error='记录不存在'), 404
+        return {'ready': True}
+
+    @app.get('/.well-known/bifrost/activity')
+    def bifrost_activity():
+        if request.remote_addr not in ('127.0.0.1', '::1'):
+            return jsonify(error='记录不存在'), 404
+        try:
+            with s.db.connect() as conn:
+                conn.execute('BEGIN')
+                active = any(conn.execute(query).fetchone() for query in ACTIVITY_QUERIES)
+        except sqlite3.Error:
+            return jsonify(error='活动状态不可读'), 503
+        return {'idle': not active, 'reason': '抖音存在在途任务、搜索、发送或扫码' if active else ''}
 
     @app.post('/api/media')
     def media_upload():

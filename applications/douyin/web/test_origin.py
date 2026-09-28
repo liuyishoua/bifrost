@@ -42,6 +42,29 @@ class OriginTests(unittest.TestCase):
         self.assertEqual(self.post_account('http://127.0.0.1:8766', prefix=None).status_code, 200)
         self.assertEqual(self.post_account('http://127.0.0.1:8080', prefix=None).status_code, 403)
 
+    def test_separate_gateway_origin_is_accepted_only_when_configured(self):
+        with patch.dict(os.environ, {'BIFROST_APP_ORIGIN': 'http://127.0.0.1:9002'}):
+            self.assertEqual(self.post_account('http://127.0.0.1:9002', prefix=None).status_code, 200)
+            self.assertEqual(self.post_account('http://127.0.0.1:8080', prefix=None).status_code, 403)
+
+    def test_separate_port_page_uses_verification_port(self):
+        page = self.client.get('/static/verification.html', base_url='http://127.0.0.1:8766')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'<meta name="verification-origin" content="http://127.0.0.1:8081">', page.data)
+
+    def test_verification_window_knows_separate_app_origin(self):
+        with patch.dict(os.environ, {'BIFROST_APP_ORIGIN': 'http://127.0.0.1:9001'}):
+            page = self.client.get('/verification-frame', base_url='http://verification.localhost')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'<meta name="app-origin" content="http://127.0.0.1:9001">', page.data)
+
+    def test_bifrost_activity_blocks_running_work(self):
+        self.assertEqual(self.client.get('/.well-known/bifrost/ready').json, {'ready': True})
+        self.assertEqual(self.client.get('/.well-known/bifrost/activity').json['idle'], True)
+        self.app.extensions['console'].db.run(
+            "INSERT INTO tasks(id,request_id,name,config,status) VALUES('t','r','task','{}','running')")
+        self.assertEqual(self.client.get('/.well-known/bifrost/activity').json['idle'], False)
+
     def test_verification_port_accepts_its_configured_origin(self):
         headers = {'Origin': 'http://127.0.0.1:8081', 'Sec-Fetch-Site': 'same-origin'}
         response = self.client.post('/verification-request/test/unknown', headers=headers,

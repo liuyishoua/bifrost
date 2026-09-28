@@ -1,4 +1,5 @@
 """Conservative local service lifecycle. Unknown ownership or work always fails closed."""
+import json
 import os
 from pathlib import Path
 import signal
@@ -6,29 +7,38 @@ import socket
 import subprocess
 import threading
 import time
+from urllib.request import urlopen
 
 import psutil
-
-from apps import APPS
-from integrations.base import read_json
-from integrations import adapter_for
-from integrations.base import IntegrationError
 
 
 class ServiceError(Exception):
     pass
 
 
+def read_json(app, path, timeout=3):
+    try:
+        with urlopen(f"http://127.0.0.1:{app.port}{path}", timeout=timeout) as response:
+            if response.status != 200:
+                raise ServiceError("服务状态接口未返回 200")
+            data = json.load(response)
+        if not isinstance(data, dict):
+            raise ServiceError("服务状态响应格式错误")
+        return data
+    except (OSError, TimeoutError, ValueError) as exc:
+        raise ServiceError("服务状态不可读") from exc
+
+
 class Controller:
-    def __init__(self, runtime, registry=None):
+    def __init__(self, runtime, registry):
         self.runtime = Path(runtime)
         self.registry = registry
-        self.locks = {key: threading.Lock() for key in APPS}
+        self.locks = {}
         self.transitioning = set()
         self.children = {}
 
     def _app(self, app_id):
-        app = self.registry.get(app_id) if self.registry else APPS.get(app_id)
+        app = self.registry.get(app_id)
         if app is None:
             raise ServiceError("未知应用")
         return app
@@ -98,16 +108,11 @@ class Controller:
         return found
 
     def _ready(self, app):
-        if app.kind == "manifest":
-            if not app.ready_path:
-                return True
-            try:
-                return read_json(app, app.ready_path).get("ready") is True
-            except IntegrationError:
-                return False
+        if not app.ready_path:
+            return True
         try:
-            return adapter_for(app.id).ready(app)
-        except IntegrationError:
+            return read_json(app, app.ready_path).get("ready") is True
+        except ServiceError:
             return False
 
     def status(self, app_id):
@@ -120,7 +125,7 @@ class Controller:
                     return "unavailable", "配置进程存在但端口未就绪"
             except ServiceError as exc:
                 return "unavailable", str(exc)
-            if self.registry and app.kind == "manifest" and app_id in self.registry.pinned:
+            if app_id in self.registry.pinned:
                 lock = self.locks.setdefault(app_id, threading.Lock())
                 if not lock.acquire(blocking=False):
                     return "starting", "服务正在启停"
@@ -139,19 +144,10 @@ class Controller:
         return "running", ""
 
     def _idle(self, app):
-        if app.kind == "manifest":
-            if app.activity_path:
-                try:
-                    state = read_json(app, app.activity_path)
-                except IntegrationError as exc:
-                    raise ServiceError(str(exc)) from exc
-                if state.get("idle") is not True:
-                    raise ServiceError(str(state.get("reason") or "服务存在在途工作"))
-            return
-        try:
-            adapter_for(app.id).ensure_idle(app)
-        except IntegrationError as exc:
-            raise ServiceError(str(exc)) from exc
+        if app.activity_path:
+            state = read_json(app, app.activity_path)
+            if state.get("idle") is not True:
+                raise ServiceError(str(state.get("reason") or "服务存在在途工作"))
 
     def operate(self, app_id, action):
         if action not in ("start", "stop"):
@@ -168,13 +164,12 @@ class Controller:
             if action == "start":
                 if listening or self._configured_processes(app):
                     raise ServiceError("端口或配置进程已存在，不能重复启动")
-                pinned = bool(self.registry and app.kind == "manifest")
+                pinned = True
                 spawned = False
                 if pinned:
                     self.registry.pin(app_id, app)
                 try:
-                    if app.kind == "manifest":
-                        self._build(app)
+                    self._build(app)
                     if not app.repository.is_dir() or not Path(self._command(app)[0]).is_file():
                         raise ServiceError("业务源码目录或可执行文件不存在")
                     if self._listening(app) or self._configured_processes(app):
@@ -187,7 +182,8 @@ class Controller:
                             proc = subprocess.Popen(self._command(app), cwd=app.repository, stdin=subprocess.DEVNULL,
                                                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                                                     env={**os.environ, "ANYDOOR_PUBLIC_ORIGIN": os.environ.get("BIFROST_PUBLIC_ORIGIN") or os.environ.get("ANYDOOR_PUBLIC_ORIGIN", "http://127.0.0.1:8080"),
-                                                         "ANYDOOR_VERIFY_ORIGIN": os.environ.get("BIFROST_VERIFY_ORIGIN") or os.environ.get("ANYDOOR_VERIFY_ORIGIN", "http://127.0.0.1:8081")})
+                                                         "ANYDOOR_VERIFY_ORIGIN": os.environ.get("BIFROST_VERIFY_ORIGIN") or os.environ.get("ANYDOOR_VERIFY_ORIGIN", "http://127.0.0.1:8081"),
+                                                         "BIFROST_APP_ORIGIN": app.origin})
                         except OSError as exc:
                             raise ServiceError("启动失败，请查看业务日志") from exc
                     spawned = True
@@ -200,7 +196,7 @@ class Controller:
                     if proc.poll() is not None:
                         proc.wait()
                         self.children.pop(app_id, None)
-                        if self.registry and app.kind == "manifest":
+                        if pinned:
                             self.registry.unpin(app_id)
                         raise ServiceError("进程提前退出，请查看业务日志")
                     if self._listening(app) and self._owner(app) and self._ready(app):
@@ -208,7 +204,7 @@ class Controller:
                     time.sleep(.2)
                 raise ServiceError("启动后未通过进程、端口及就绪检查")
             if not listening:
-                if self.registry and app.kind == "manifest" and app_id in self.registry.pinned:
+                if app_id in self.registry.pinned:
                     if self._configured_processes(app):
                         raise ServiceError("配置进程存在但端口未就绪")
                     self.registry.unpin(app_id)
@@ -238,7 +234,7 @@ class Controller:
                     child = self.children.pop(app_id, None)
                     if child:
                         child.wait(timeout=0)
-                    if self.registry and app.kind == "manifest":
+                    if app_id in self.registry.pinned:
                         self.registry.unpin(app_id)
                     return "stopped"
                 time.sleep(.2)

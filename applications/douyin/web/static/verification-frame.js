@@ -4,6 +4,8 @@
     `${location.protocol}//${host}${location.port ? ':' + location.port : ''}`));
   const portalOrigin = document.querySelector?.('meta[name=portal-origin]')?.content;
   if (portalOrigin) allowedOrigins.add(portalOrigin);
+  const appOrigin = document.querySelector?.('meta[name=app-origin]')?.content;
+  if (appOrigin) allowedOrigins.add(appOrigin);
   let started = false;
   window.addEventListener('message', event => {
     if (event.source !== controller || !allowedOrigins.has(event.origin) || event.data?.type !== 'verification-start' || started) return;
