@@ -65,6 +65,7 @@ const clock = (value) =>
     : "—";
 let meta = { demo: false },
   accounts = [],
+  userTags = [],
   generation = 0,
   timers = new Set(),
   toastTimer;
@@ -225,6 +226,23 @@ function accountOptions(send = false, selected = "") {
     )
     .join("")}`;
 }
+async function refreshAccountPickers(token) {
+  try {
+    const data = await api("/accounts");
+    if (token !== generation) return;
+    accounts = data.items;
+    document.querySelectorAll("select[data-account-picker]").forEach(node => {
+      const value = node.value;
+      const initial = node.dataset.accountPicker === "search"
+        ? accountOptions() : '<option value="">全部账号</option>' + accounts.map(a =>
+          `<option value="${e(a.id)}">${e(a.name)}</option>`).join("");
+      node.innerHTML = initial;
+      if ([...node.options].some(option => option.value === value)) node.value = value;
+    });
+  } catch (error) {
+    if (token === generation) toast(`账号状态刷新失败：${error.message}`);
+  }
+}
 function person(user) {
   const avatar = /^https?:\/\//i.test(user.avatar_url || "")
     ? `<img src="${e(user.avatar_url)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
@@ -363,7 +381,7 @@ async function searchPage() {
   shell(
     "search",
     "搜索入库",
-    `${heading("DISCOVER & COLLECT", "发现你的下一次连接", "从关键词开始，把合适的用户留在工作空间。")}<section class="panel"><form id="search-form" class="panelbody"><div class="searchbar"><label>搜索关键词<input name="query" required placeholder="试试：生活方式、咖啡、户外" value="${e(searchState.job?.query || "")}"></label><label>查询账号<select name="account_id" required>${accountOptions()}</select></label><label>查询页数<input name="max_pages" type="number" min="1" max="100" value="3" required></label><button class="primary" type="submit">搜索用户 →</button></div></form><div id="search-progress"></div></section><section class="panel"><div class="paneltitle"><h2>筛选与选择</h2><span class="hint">先筛选，再选择入库</span></div><form class="panelbody" id="search-filters"><div class="filters"><label>关键词模糊查询<input name="query" placeholder="昵称、抖音号或 UID" value="${e(searchState.filters.query || "")}"></label>${verificationFilter(searchState.filters.blue_v)}${numericFilters(searchState.filters)}${sortSelect(searchState.filters.sort)}</div><div class="filterfooter"><span class="hint">门槛严格大于，留空不限；更改筛选会清空已选用户。</span><button type="submit">应用筛选</button></div></form><div id="search-results">${empty("等待搜索结果", "选择可搜索的账号，输入关键词开始。")}</div></section>`,
+    `${heading("DISCOVER & COLLECT", "发现你的下一次连接", "从关键词开始，把合适的用户留在工作空间。")}<section class="panel"><form id="search-form" class="panelbody"><div class="searchbar"><label>搜索关键词<input name="query" required placeholder="试试：生活方式、咖啡、户外" value="${e(searchState.job?.query || "")}"></label><label>查询账号<select name="account_id" data-account-picker="search" required>${accountOptions()}</select></label><label>查询页数<input name="max_pages" type="number" min="1" max="100" value="3" required></label><button class="primary" type="submit">搜索用户 →</button></div></form><div id="search-progress"></div></section><section class="panel"><div class="paneltitle"><h2>筛选与选择</h2><span class="hint">先筛选，再选择入库</span></div><form class="panelbody" id="search-filters"><div class="filters"><label>关键词模糊查询<input name="query" placeholder="昵称、抖音号或 UID" value="${e(searchState.filters.query || "")}"></label>${verificationFilter(searchState.filters.blue_v)}${numericFilters(searchState.filters)}${sortSelect(searchState.filters.sort)}</div><div class="filterfooter"><span class="hint">门槛严格大于，留空不限；更改筛选会清空已选用户。</span><button type="submit">应用筛选</button></div></form><div id="search-results">${empty("等待搜索结果", "选择可搜索的账号，输入关键词开始。")}</div></section>`,
   );
   const token = generation;
   const progress = (job) => {
@@ -438,8 +456,10 @@ async function searchPage() {
   async function watch() {
     stopSearch();
     const job = await api(`/searches/${searchState.id}`);
+    if (token !== generation) return;
     progress(job);
     await results();
+    if (token !== generation) return;
     if (job.status === "running") {
       let lastTotal = job.total;
       stopSearch = poll(async () => {
@@ -481,6 +501,7 @@ async function searchPage() {
     try {
       await watch();
     } catch (error) {
+      if (token !== generation) return;
       searchState.id = null;
       try {
         sessionStorage.removeItem("dy.search.id");
@@ -491,8 +512,7 @@ async function searchPage() {
 }
 async function usersPage() {
   const pageToken = generation;
-  const tags = (await api("/tags")).items;
-  if (pageToken !== generation) return;
+  const tags = userTags;
   const f = userState.filters;
   shell(
     "users",
@@ -509,14 +529,25 @@ async function usersPage() {
       )
       .join(
         "",
-      )}</select></label>${sortSelect(f.sort)}${verificationFilter(f.blue_v)}${numericFilters(f)}<label>入库日期从<input type="date" name="created_from" value="${e(f.created_from || "")}"></label><label>入库日期至<input type="date" name="created_to" value="${e(f.created_to || "")}"></label><label>发送账号<select name="account_id"><option value="">全部账号</option>${accounts.map((a) => `<option value="${e(a.id)}" ${String(f.account_id) === String(a.id) ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>发送日期从<input type="date" name="sent_from" value="${e(f.sent_from || "")}"></label><label>发送日期至<input type="date" name="sent_to" value="${e(f.sent_to || "")}"></label></div><details class="tag-filter"><summary>按标签筛选${f.tag_ids ? ` · 已选 ${String(f.tag_ids).split(",").length} 个` : ""}</summary>${tagChoices(
+      )}</select></label>${sortSelect(f.sort)}${verificationFilter(f.blue_v)}${numericFilters(f)}<label>入库日期从<input type="date" name="created_from" value="${e(f.created_from || "")}"></label><label>入库日期至<input type="date" name="created_to" value="${e(f.created_to || "")}"></label><label>发送账号<select name="account_id" data-account-picker="all"><option value="">全部账号</option>${accounts.map((a) => `<option value="${e(a.id)}" ${String(f.account_id) === String(a.id) ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>发送日期从<input type="date" name="sent_from" value="${e(f.sent_from || "")}"></label><label>发送日期至<input type="date" name="sent_to" value="${e(f.sent_to || "")}"></label></div><details class="tag-filter"><summary>按标签筛选${f.tag_ids ? ` · 已选 ${String(f.tag_ids).split(",").length} 个` : ""}</summary><div id="user-tag-choices">${tagChoices(
       tags,
       String(f.tag_ids || "")
         .split(",")
         .filter(Boolean),
-    )}<label>标签匹配方式<select name="tag_mode"><option value="any" ${f.tag_mode !== "all" ? "selected" : ""}>匹配任一标签</option><option value="all" ${f.tag_mode === "all" ? "selected" : ""}>同时具备全部标签</option></select></label></details><div class="filterfooter"><span class="hint">数值条件严格大于；翻页保留选择，更改筛选后清空。</span><div class="row"><button type="button" id="reset-filters">重置</button><button type="submit" class="primary">筛选用户</button></div></div></form><div id="users-results"></div></section>`,
+    )}</div><label>标签匹配方式<select name="tag_mode"><option value="any" ${f.tag_mode !== "all" ? "selected" : ""}>匹配任一标签</option><option value="all" ${f.tag_mode === "all" ? "selected" : ""}>同时具备全部标签</option></select></label></details><div class="filterfooter"><span class="hint">数值条件严格大于；翻页保留选择，更改筛选后清空。</span><div class="row"><button type="button" id="reset-filters">重置</button><button type="submit" class="primary">筛选用户</button></div></div></form><div id="users-results">${empty("正在加载", "页面已打开，数据正在同步。")}</div></section>`,
   );
   const token = generation;
+  const refreshTags = api("/tags").then(data => {
+    if (pageToken !== generation) return;
+    const root = document.querySelector("#user-tag-choices");
+    const selected = root.querySelector("input")
+      ? [...root.querySelectorAll("input:checked")].map(node => node.value)
+      : String(userState.filters.tag_ids || "").split(",").filter(Boolean);
+    userTags = data.items;
+    root.innerHTML = tagChoices(userTags, selected);
+  }).catch(error => {
+    if (pageToken === generation) toast(`标签刷新失败：${error.message}`);
+  });
   async function load() {
     const data = await api(
       `/users?${params({ ...userState.filters, page: userState.page })}`,
@@ -649,10 +680,10 @@ async function usersPage() {
     userState.filters = {};
     userState.selected.clear();
     userState.page = 1;
-    return usersPage();
+    return render();
   });
   bind("[data-top-create]", "click", () => createTaskDialog());
-  await load();
+  await Promise.all([load(), refreshTags]);
 }
 function executionFields(task = null) {
   const mode = task?.execution_mode || "auto";
@@ -702,8 +733,8 @@ async function createTaskDialog(selection = userState, imported = false) {
   const token = generation;
   const [templateData, accountData] = await Promise.all([api("/message-templates"), api("/accounts")]);
   const templates = templateData.items;
-  accounts = accountData.items;
   if (token !== generation) return;
+  accounts = accountData.items;
   showDialog(
     "创建发送任务",
     `<form id="create-task" class="formgrid"><div class="wide callout" style="margin:0">目标已固定：<strong>${uids.length} 人</strong>，${imported ? "来自本次搜索选中并入库的用户" : "来自用户库跨页选择"}。<br>创建后为「未开始」，点击开始才会执行。${imported ? "<br>用户已入库；取消创建不会撤回入库。" : ""}</div><details class="wide"><summary class="hint">查看接收者 UID 与筛选范围</summary><div class="targets">${uids.map((uid) => `<span class="targetchip">${e(uid)}</span>`).join("")}</div><div class="hint">${e(filterSummary(selection.filters))}</div></details><label class="wide">任务名称<input name="name" required maxlength="120" placeholder="例如：秋日生活方式合作"></label>${executionFields()}${templatePicker(templates)}<div class="wide" id="task-message-editor"></div>${taskLimitFields()}${replyCheckFields()}<label class="wide">预约时间（可选）<input name="scheduled_at" type="datetime-local"><span class="hint">手动开始后等待预约时间；留空则点击开始后立即进入执行。</span></label><details class="wide"><summary class="hint">可选发送门槛 · 不满足的目标会标记跳过</summary><div class="formgrid" style="margin-top:15px">${numericFilters()}</div></details></form>`,
@@ -791,7 +822,7 @@ function sendRecordDetail(row) {
 }
 async function sendDetailsPage() {
   shell("send-details", "对话详情",
-    `${heading("SEND HISTORY", "每一次交流，都有记录", "查看发送记录与用户回复。已删除任务的历史仍保留。")}<div class="record-tabs" role="tablist" aria-label="消息分类"><button type="button" role="tab" data-record-category="all">全部</button><button type="button" role="tab" data-record-category="outgoing">已发送</button><button type="button" role="tab" data-record-category="incoming">用户回复</button></div><section class="panel"><form id="send-record-filters" class="panelbody"><input type="hidden" name="category" value="outgoing"><div class="filters"><label>发送账号<select name="account_id"><option value="">全部账号</option></select></label><label>所属任务<select name="task_id"><option value="">全部任务</option></select></label><label>消息归属<select name="message_stage"><option value="">全部次数与方向</option></select></label><label>发送统计口径<select name="source_scope"><option value="">全部会话记录</option><option value="local">本系统全部发送</option><option value="first_touch">仅首次触达</option></select></label><label>发送结果<select name="status"><option value="">全部结果</option><option value="sent">成功</option><option value="failed">失败</option></select></label><label>业务码<select name="business_code"><option value="">全部业务码</option><option value="missing">未记录业务码</option></select></label><label>用户 / 消息关键词<input name="query" placeholder="昵称、抖音号、UID 或正文"></label><label>用户 UID<input name="uid" placeholder="精确筛选 UID"></label><label>消息日期从<input type="date" name="sent_from"></label><label>消息日期至<input type="date" name="sent_to"></label></div><div class="filterfooter"><span class="hint">按消息时间筛选，默认最新在前。已发送包含首次及后续发送（成功和失败均保留）。同一账号与同一用户的发送、回复分别累计，文字和图片每条算一次；历史按本地已记录消息编号，未确认次序单独标注。</span><div class="row"><button type="button" id="reset-send-records">重置</button><button class="primary" type="submit">筛选记录</button></div></div></form></section><div id="send-record-summary" class="stats" style="margin-top:20px;grid-template-columns:repeat(3,minmax(0,1fr))"></div><section class="panel"><div id="send-record-list"></div></section>`);
+    `${heading("SEND HISTORY", "每一次交流，都有记录", "查看发送记录与用户回复。已删除任务的历史仍保留。")}<div class="record-tabs" role="tablist" aria-label="消息分类"><button type="button" role="tab" data-record-category="all">全部</button><button type="button" role="tab" data-record-category="outgoing">已发送</button><button type="button" role="tab" data-record-category="incoming">用户回复</button></div><section class="panel"><form id="send-record-filters" class="panelbody"><input type="hidden" name="category" value="outgoing"><div class="filters"><label>发送账号<select name="account_id"><option value="">全部账号</option></select></label><label>所属任务<select name="task_id"><option value="">全部任务</option></select></label><label>消息归属<select name="message_stage"><option value="">全部次数与方向</option></select></label><label>发送统计口径<select name="source_scope"><option value="">全部会话记录</option><option value="local">本系统全部发送</option><option value="first_touch">仅首次触达</option></select></label><label>发送结果<select name="status"><option value="">全部结果</option><option value="sent">成功</option><option value="failed">失败</option></select></label><label>业务码<select name="business_code"><option value="">全部业务码</option><option value="missing">未记录业务码</option></select></label><label>用户 / 消息关键词<input name="query" placeholder="昵称、抖音号、UID 或正文"></label><label>用户 UID<input name="uid" placeholder="精确筛选 UID"></label><label>消息日期从<input type="date" name="sent_from"></label><label>消息日期至<input type="date" name="sent_to"></label></div><div class="filterfooter"><span class="hint">按消息时间筛选，默认最新在前。已发送包含首次及后续发送（成功和失败均保留）。同一账号与同一用户的发送、回复分别累计，文字和图片每条算一次；历史按本地已记录消息编号，未确认次序单独标注。</span><div class="row"><button type="button" id="reset-send-records">重置</button><button class="primary" type="submit">筛选记录</button></div></div></form></section><div id="send-record-summary" class="stats" style="margin-top:20px;grid-template-columns:repeat(3,minmax(0,1fr))"></div><section class="panel"><div id="send-record-list">${empty("正在加载", "页面已打开，数据正在同步。")}</div></section>`);
   const token = generation, form = document.querySelector("#send-record-filters");
   const url = new URLSearchParams(location.search);
   let filters = Object.fromEntries([...url].filter(([key]) => form.elements.namedItem(key))), page = 1, version = 0;
@@ -861,14 +892,14 @@ async function sendDetailsPage() {
     await load();
   });
   await load();
-  poll(load, 5000);
+  if (token === generation) poll(load, 5000);
 }
 
 async function tasksPage() {
   shell(
     "tasks",
     "任务管理",
-    `${heading("OUTREACH TASKS", "有节奏地，建立连接", "每一次执行，都从明确的目标和你的确认开始。", '<a class="primary" style="padding:11px 15px;border-radius:9px;font-size:12px" href="users" data-nav>从用户库创建任务</a>')}<section class="panel"><form id="task-filters" class="panelbody"><div class="filters"><label>任务名称<input name="query" placeholder="搜索任务"></label><label>任务状态<select name="status"><option value="">全部状态</option>${["pending", "running", "paused", "completed"].map((s) => `<option value="${s}">${labels[s]}</option>`).join("")}</select></label><label>创建日期从<input name="created_from" type="date"></label><label>创建日期至<input name="created_to" type="date"></label></div><div class="filterfooter"><span class="hint">已完成表示全部目标处理结束，包含失败或跳过。</span><button class="primary">筛选任务</button></div></form><div id="task-list"></div></section>`,
+    `${heading("OUTREACH TASKS", "有节奏地，建立连接", "每一次执行，都从明确的目标和你的确认开始。", '<a class="primary" style="padding:11px 15px;border-radius:9px;font-size:12px" href="users" data-nav>从用户库创建任务</a>')}<section class="panel"><form id="task-filters" class="panelbody"><div class="filters"><label>任务名称<input name="query" placeholder="搜索任务"></label><label>任务状态<select name="status"><option value="">全部状态</option>${["pending", "running", "paused", "completed"].map((s) => `<option value="${s}">${labels[s]}</option>`).join("")}</select></label><label>创建日期从<input name="created_from" type="date"></label><label>创建日期至<input name="created_to" type="date"></label></div><div class="filterfooter"><span class="hint">已完成表示全部目标处理结束，包含失败或跳过。</span><button class="primary">筛选任务</button></div></form><div id="task-list">${empty("正在加载", "页面已打开，数据正在同步。")}</div></section>`,
   );
   const token = generation;
   let filters = {},
@@ -909,7 +940,7 @@ async function tasksPage() {
     }),
   );
   await load();
-  poll(load, 5000);
+  if (token === generation) poll(load, 5000);
 }
 function deleteTaskDialog(task, afterDelete) {
   return confirmAction(
@@ -999,7 +1030,7 @@ async function taskPage(id) {
   shell(
     "tasks",
     "任务详情",
-    `<div id="task-detail"></div><section class="panel" id="task-replies" aria-label="已回复用户"></section><section class="panel"><div class="paneltitle"><h2>接收者与结果</h2><select id="recipient-status" aria-label="筛选接收者结果" style="width:145px"><option value="">全部结果</option>${["pending", "sending", "sent", "failed", "skipped"].map((s) => `<option value="${s}">${labels[s]}</option>`).join("")}</select></div><div id="recipient-list"></div></section><section class="panel" id="task-followups" aria-label="后续发送记录"></section>`,
+    `<div id="task-detail">${empty("正在加载", "页面已打开，数据正在同步。")}</div><section class="panel" id="task-replies" aria-label="已回复用户"></section><section class="panel"><div class="paneltitle"><h2>接收者与结果</h2><select id="recipient-status" aria-label="筛选接收者结果" style="width:145px"><option value="">全部结果</option>${["pending", "sending", "sent", "failed", "skipped"].map((s) => `<option value="${s}">${labels[s]}</option>`).join("")}</select></div><div id="recipient-list">${empty("正在加载", "页面已打开，数据正在同步。")}</div></section><section class="panel" id="task-followups" aria-label="后续发送记录"></section>`,
   );
   const token = generation;
   let page = 1,
@@ -1121,7 +1152,7 @@ async function libraryPage(kind) {
   shell(
     kind,
     title,
-    `${heading(isTags ? "AUDIENCE LABELS" : "MESSAGE LIBRARY", isTags ? "让每一类用户，更清晰" : "把好的表达，留待下次使用", isTags ? "用标签组织用户，再按标签筛选与创建任务。" : "维护常用话术，创建任务时选择并按需调整。", `<button class="primary" id="add-library">＋ ${isTags ? "新增标签" : "新增话术"}</button>`)}<section class="panel"><div class="panelbody"><label>${isTags ? "查找标签" : "查找话术"}<input id="library-query" placeholder="按${isTags ? "名称" : "标题"}或描述搜索"></label></div><div id="library-list"></div></section>`,
+    `${heading(isTags ? "AUDIENCE LABELS" : "MESSAGE LIBRARY", isTags ? "让每一类用户，更清晰" : "把好的表达，留待下次使用", isTags ? "用标签组织用户，再按标签筛选与创建任务。" : "维护常用话术，创建任务时选择并按需调整。", `<button class="primary" id="add-library">＋ ${isTags ? "新增标签" : "新增话术"}</button>`)}<section class="panel"><div class="panelbody"><label>${isTags ? "查找标签" : "查找话术"}<input id="library-query" placeholder="按${isTags ? "名称" : "标题"}或描述搜索"></label></div><div id="library-list">${empty("正在加载", "页面已打开，数据正在同步。")}</div></section>`,
   );
   const token = generation;
   let items = [];
@@ -1254,7 +1285,7 @@ async function accountsPage() {
   shell(
     "accounts",
     "账号管理",
-    `${heading("CONNECTED ACCOUNTS", "管理你的执行身份", "搜索与发送凭证分别检查，每个账号独立使用。", '<button class="primary" id="add-account">＋ 添加账号</button>')}<div class="callout">1. 添加账号并显示二维码　 →　 2. 账号本人使用抖音 App 扫码确认　 →　 3. 自动识别账号并保存登录状态<br>已有账号需要重新登录时，直接点击「重新扫码登录」。${meta.demo ? "<br>当前为演示模式。账号、二维码确认和发送均为本地模拟，不联系真实用户。" : ""}</div><div id="account-bulk" class="account-bulk"></div><div id="accounts-grid"></div>`,
+    `${heading("CONNECTED ACCOUNTS", "管理你的执行身份", "搜索与发送凭证分别检查，每个账号独立使用。", '<button class="primary" id="add-account">＋ 添加账号</button>')}<div class="callout">1. 添加账号并显示二维码　 →　 2. 账号本人使用抖音 App 扫码确认　 →　 3. 自动识别账号并保存登录状态<br>已有账号需要重新登录时，直接点击「重新扫码登录」。${meta.demo ? "<br>当前为演示模式。账号、二维码确认和发送均为本地模拟，不联系真实用户。" : ""}</div><div id="account-bulk" class="account-bulk"></div><div id="accounts-grid">${empty("正在加载", "页面已打开，数据正在同步。")}</div>`,
   );
   const token = generation;
   let qrAccount = null, version = 0, bulkBusy = false;
@@ -1399,6 +1430,7 @@ async function accountsPage() {
     }), dialog);
   });
   await load();
+  if (token !== generation) return;
   poll(load, 1800);
   poll(() => {
     document.querySelectorAll("[data-account-countdown]").forEach(node => {
@@ -1522,6 +1554,7 @@ async function dashboardPage(id) {
       : "等待后台执行";
   }
   await load();
+  if (token !== generation) return;
   poll(load, 1400);
   poll(countdown, 500);
 }
@@ -1720,6 +1753,7 @@ async function overviewPage() {
     return load();
   });
   await load();
+  if (token !== generation) return;
   poll(load, 2000);
   poll(countdown, 500);
 }
@@ -1728,12 +1762,15 @@ async function render() {
   generation++;
   timers.forEach(clearTimeout);
   timers.clear();
+  closeConversation?.();
+  closeConversation = null;
   dialog.close();
   const token = generation;
   try {
-    accounts = (await api("/accounts")).items;
-    if (token !== generation) return;
     const path = location.pathname.slice(APP_PREFIX.length) || "/";
+    if (["/", "/search", "/users"].includes(path)) {
+      refreshAccountPickers(token);
+    }
     const dash = path.match(/^\/tasks\/([^/]+)\/dashboard$/);
     const task = path.match(/^\/tasks\/([^/]+)$/);
     if (dash)
@@ -1752,8 +1789,8 @@ async function render() {
       return await libraryPage("message-templates");
     await searchPage();
   } catch (err) {
-    if (token === generation)
-      shell(
+    if (token !== generation) return;
+    shell(
         "search",
         "加载失败",
         `<div class="errorbox">${e(err.message)}</div><button id="retry">重新加载</button>`,
@@ -1761,6 +1798,7 @@ async function render() {
     bind("#retry", "click", render);
   }
 }
+shell("", "正在连接", empty("正在加载工作空间", "正在确认运行模式。"));
 try {
   meta = await api("/meta");
   await render();
