@@ -1,0 +1,16 @@
+[
+  {
+    "name": "抢票工作台",
+    "description": "查询车票与管理抢票任务",
+    "category": "应用",
+    "url": "https://d.58nft.net:9444/",
+    "id": "ticket"
+  },
+  {
+    "name": "抖音流量矩阵",
+    "description": "账号、搜索与消息工作台",
+    "category": "应用",
+    "url": "https://d.58nft.net:9445/",
+    "id": "douyin"
+  }
+]

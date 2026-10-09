@@ -1,0 +1,18 @@
+<form class="search" action="/" method="get" role="search">
+      <label class="sr-only" for="query">搜索链接</label>
+      <input id="query" name="q" value="{{ query }}" placeholder="搜索名称、描述或分类…" type="search">
+      {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+      <button type="submit">搜索</button>
+    </form>
+    <nav class="categories" aria-label="链接分类">
+      <a href="{{ url_for('home', q=query) }}" {% if not category %}aria-current="page"{% endif %}>全部 <span>{{ total }}</span></a>
+      {% for item in categories %}<a href="{{ url_for('home', category=item, q=query) }}" {% if item == category %}aria-current="page"{% endif %}>{{ item }}</a>{% endfor %}
+    </nav>
+    <div class="links">
+      {% for link in links %}
+      <a class="link-card" href="{{ link.url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ link.name }}（在新标签页打开）">
+        <div class="card-top"><span class="category">{{ link.category }}</span><span aria-hidden="true">↗</span></div>
+        <h2>{{ link.name }}</h2><p>{{ link.description or '打开链接' }}</p><span class="destination">{{ link.url }}</span>
+      </a>
+      {% else %}<div class="empty"><h2>{{ '没有匹配的链接' if query or category else '还没有链接' }}</h2><p>{{ '试试其他关键词或分类。' if query or category else '常用入口将在这里展示。' }}</p>{% if query or category %}<a href="/">查看全部链接</a>{% endif %}</div>{% endfor %}
+    </div>

@@ -18,3 +18,6 @@ applications/**/.env
 applications/**/.DS_Store
 applications/**/.bifrost/
 applications/**/.runtime/
+
+# Optional private deployment configuration
+.local-deploy/

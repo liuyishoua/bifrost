@@ -1,9 +1,0 @@
-schema: 1
-id: ticket
-name: 抢票工作台
-description: 查询车票与管理抢票任务
-internal_port: 8767
-data_dir: .runtime_web
-start: [../../.venv-ticket/bin/python, -m, web, --port, "${PORT}", --data-dir, "${DATA_DIR}"]
-ready_path: /.well-known/bifrost/ready
-activity_path: /.well-known/bifrost/activity

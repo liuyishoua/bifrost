@@ -1,9 +1,0 @@
-schema: 1
-id: douyin
-name: 抖音流量矩阵
-description: 账号、搜索与消息工作台
-internal_port: 8766
-data_dir: datas/web
-start: [../../.venv-douyin/bin/python, -m, web, --port, "${PORT}", --data-dir, "${DATA_DIR}"]
-ready_path: /.well-known/bifrost/ready
-activity_path: /.well-known/bifrost/activity

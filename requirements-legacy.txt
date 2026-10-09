@@ -1,0 +1,4 @@
+# Optional dependencies for retained migration tools and their tests.
+-r requirements.txt
+psutil>=6,<9
+PyYAML>=6,<7
