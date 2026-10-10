@@ -1,18 +1,84 @@
 <form class="search" action="/" method="get" role="search">
       <label class="sr-only" for="query">搜索链接</label>
       <input id="query" name="q" value="{{ query }}" placeholder="搜索名称、描述或分类…" type="search">
-      {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+      <input type="hidden" name="category" value="{{ category }}">
       <button type="submit">搜索</button>
     </form>
     <nav class="categories" aria-label="链接分类">
-      <a href="{{ url_for('home', q=query) }}" {% if not category %}aria-current="page"{% endif %}>全部 <span>{{ total }}</span></a>
-      {% for item in categories %}<a href="{{ url_for('home', category=item, q=query) }}" {% if item == category %}aria-current="page"{% endif %}>{{ item }}</a>{% endfor %}
+      <a data-category="" href="{{ url_for('home', q=query) }}" {% if not category %}aria-current="page"{% endif %}>全部 <span>{{ total }}</span></a>
+      {% for item in categories %}<a data-category="{{ item }}" href="{{ url_for('home', category=item, q=query) }}" {% if item == category %}aria-current="page"{% endif %}>{{ item }}</a>{% endfor %}
     </nav>
-    <div class="links">
-      {% for link in links %}
-      <a class="link-card" href="{{ link.url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ link.name }}（在新标签页打开）">
-        <div class="card-top"><span class="category">{{ link.category }}</span><span aria-hidden="true">↗</span></div>
-        <h2>{{ link.name }}</h2><p>{{ link.description or '打开链接' }}</p><span class="destination">{{ link.url }}</span>
-      </a>
-      {% else %}<div class="empty"><h2>{{ '没有匹配的链接' if query or category else '还没有链接' }}</h2><p>{{ '试试其他关键词或分类。' if query or category else '常用入口将在这里展示。' }}</p>{% if query or category %}<a href="/">查看全部链接</a>{% endif %}</div>{% endfor %}
-    </div>
+    <ul class="app-list" aria-label="应用列表">
+      {% for link in all_links %}
+      <li data-project-id="{{ link.id }}" data-category="{{ link.category }}" data-search="{{ (link.name ~ ' ' ~ link.description ~ ' ' ~ link.category).lower() }}"{% if link not in links %} hidden{% endif %}>
+        {% if link.enabled %}<a class="app-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ link.name }}（在新标签页打开）">{% else %}<div class="app-link app-link-pending" aria-disabled="true">{% endif %}
+          <span class="app-link-copy"><strong>{{ link.name }}</strong>{% if link.description %}<span class="app-link-description">{{ link.description }}</span>{% endif %}</span>
+          <span class="category">{{ link.category }}</span>
+          <span class="app-link-url">{{ link.url if link.enabled else '暂无网站入口' }}</span>
+          <span class="app-link-open">{% if link.enabled %}打开 <span aria-hidden="true">↗</span>{% else %}未部署网站{% endif %}</span>
+        {% if link.enabled %}</a>{% else %}</div>{% endif %}
+      </li>
+      {% endfor %}
+      <li class="empty" data-empty{% if links %} hidden{% endif %}><h2>{{ '没有匹配的链接' if query or category else '还没有链接' }}</h2><p>{{ '试试其他关键词或分类。' if query or category else '常用入口将在这里展示。' }}</p><a href="/" data-reset{% if not query and not category %} hidden{% endif %}>查看全部链接</a></li>
+    </ul>
+<script>
+(() => {
+  const form = document.querySelector('.search');
+  const search = form.querySelector('[name=q]');
+  const categoryField = form.querySelector('[name=category]');
+  const tabs = [...document.querySelectorAll('.categories [data-category]')];
+  const rows = [...document.querySelectorAll('.app-list [data-project-id]')];
+  const empty = document.querySelector('[data-empty]');
+  function filter(updateHistory = true) {
+    const query = search.value.trim();
+    const category = categoryField.value;
+    const needle = query.toLowerCase();
+    let count = 0;
+    for (const row of rows) {
+      row.hidden = !!((category && row.dataset.category !== category) ||
+        (needle && !row.dataset.search.includes(needle)));
+      if (!row.hidden) count++;
+    }
+    for (const tab of tabs) {
+      if (tab.dataset.category === category) tab.setAttribute('aria-current', 'page');
+      else tab.removeAttribute('aria-current');
+      const url = new URL('/', location.origin);
+      if (query) url.searchParams.set('q', query);
+      if (tab.dataset.category) url.searchParams.set('category', tab.dataset.category);
+      tab.href = url.pathname + url.search;
+    }
+    empty.hidden = count > 0;
+    const filtered = !!(query || category);
+    empty.querySelector('h2').textContent = filtered ? '没有匹配的链接' : '还没有链接';
+    empty.querySelector('p').textContent = filtered ? '试试其他关键词或分类。' : '常用入口将在这里展示。';
+    empty.querySelector('[data-reset]').hidden = !filtered;
+    if (updateHistory) {
+      const url = new URL(location.href);
+      for (const [key, value] of [['q', query], ['category', category]]) {
+        if (value) url.searchParams.set(key, value);
+        else url.searchParams.delete(key);
+      }
+      if (url.href !== location.href) history.pushState(null, '', url);
+    }
+  }
+  for (const tab of tabs) tab.addEventListener('click', event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    categoryField.value = tab.dataset.category;
+    filter();
+  });
+  form.addEventListener('submit', event => { event.preventDefault(); filter(); });
+  search.addEventListener('input', () => filter());
+  empty.querySelector('[data-reset]').addEventListener('click', event => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault(); search.value = ''; categoryField.value = ''; filter();
+  });
+  window.addEventListener('popstate', () => {
+    const params = new URLSearchParams(location.search);
+    search.value = params.get('q') || '';
+    categoryField.value = params.get('category') || '';
+    filter(false);
+  });
+  filter(false);
+})();
+</script>

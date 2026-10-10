@@ -1,0 +1,10 @@
+[Unit]
+Description=Redirect former Bifrost entry to its primary domain
+After=network-online.target caddy.service
+[Service]
+User=caddy
+ExecStart=/usr/bin/caddy run --config /etc/caddy/bifrost-preview.caddy --adapter caddyfile
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target

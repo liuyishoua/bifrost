@@ -25,6 +25,16 @@ def load_links(path):
         if not re.fullmatch(r"[a-z0-9_-]{1,64}", values["id"]) or values["id"] in seen:
             raise ValueError(f"第 {index} 个链接需要唯一的 id（小写字母、数字、下划线、短横线）")
         seen.add(values["id"])
+        enabled = entry.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"第 {index} 个链接的 enabled 必须是布尔值")
+        values["enabled"] = enabled
+        if not enabled and not values["url"]:
+            if not values["name"]:
+                raise ValueError(f"第 {index} 个项目需要名称")
+            values["category"] = values["category"] or "其他"
+            links.append(SimpleNamespace(**values))
+            continue
         url = urlsplit(values["url"])
         if (not values["name"] or url.scheme not in ("http", "https")
                 or not url.hostname or url.username is not None or url.password is not None

@@ -36,12 +36,12 @@ CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, actor TEXT NOT NULL, a
 CREATE TABLE IF NOT EXISTS attempts (kind TEXT NOT NULL, key TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS attempts_lookup ON attempts(kind,key,created_at);
 """
-PAGE = """<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>
-<title>{{ title }} · 彩虹桥</title><link rel=stylesheet href='/static/portal.css'>
+PAGE = """<!doctype html><html lang=zh-CN><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>
+<title>{{ title }} · 彩虹桥</title><style>{{ portal_css|safe }}</style></head><body>
 <div class='site-shell {{ "auth-shell" if not user else "" }}'>
 <header class=site-header><div class=header-inner><a class=brand href='/' aria-label='彩虹桥首页'><span class=brand-mark aria-hidden=true><i></i><i></i><i></i></span><span><strong>彩虹桥</strong><small>BIFROST</small></span></a>
 <nav class=site-nav aria-label=主导航>{% if user %}<a href='/' class='{{ "active" if request.path == "/" else "" }}'>导航</a><a href='/settings' class='{{ "active" if request.path == "/settings" else "" }}'>个人设置</a>{% if user['role']=='admin' %}<a href='/admin' class='{{ "active" if request.path == "/admin" else "" }}'>账号管理</a><a href='/audit' class='{{ "active" if request.path == "/audit" else "" }}'>操作记录</a>{% endif %}<span class=user-chip>{{ user['username'] }}</span><form class=inline method=post action='/logout'><input type=hidden name=csrf value='{{ csrf_token }}'><button class='quiet logout' type=submit>退出</button></form>{% else %}<a href='/login' class='{{ "active" if request.path == "/login" else "" }}'>登录</a><a href='/register' class='{{ "active" if request.path == "/register" else "" }}'>注册</a>{% endif %}</nav></div></header>
-<main class='page-main {{ "auth-main" if not user else "" }}'><div class='page-heading'><div><p class=eyebrow>{{ "WELCOME TO BIFROST" if not user else "WORKSPACE / BIFROST" }}</p><h1>{{ title }}</h1>{% if subtitle %}<p class=page-subtitle>{{ subtitle }}</p>{% endif %}</div></div>{% if message %}<p class=notice role=alert>{{ message }}</p>{% endif %}{{ body|safe }}</main><footer class=site-footer><span>彩虹桥 · 让工作从这里开始</span><span>清晰、安全地连接你的应用</span></footer></div></html>"""
+<main class='page-main {{ "auth-main" if not user else "" }}'><div class='page-heading'><div><p class=eyebrow>{{ "WELCOME TO BIFROST" if not user else "WORKSPACE / BIFROST" }}</p><h1>{{ title }}</h1>{% if subtitle %}<p class=page-subtitle>{{ subtitle }}</p>{% endif %}</div></div>{% if message %}<p class=notice role=alert>{{ message }}</p>{% endif %}{{ body|safe }}</main><footer class=site-footer><span>彩虹桥 · 让工作从这里开始</span><span>清晰、安全地连接你的应用</span></footer></div></body></html>"""
 
 
 def create_app(runtime=None, links_path=None):
@@ -61,6 +61,7 @@ def create_app(runtime=None, links_path=None):
     with sqlite3.connect(database) as db:
         db.executescript(SCHEMA)
     os.chmod(database, 0o600)
+    portal_css = (Path(__file__).parent / "static" / "portal.css").read_text(encoding="utf-8")
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 65536
     public_origin = (os.environ.get("BIFROST_PUBLIC_ORIGIN") or os.environ.get("ANYDOOR_PUBLIC_ORIGIN") or "http://127.0.0.1:8080").rstrip("/")
@@ -112,7 +113,8 @@ def create_app(runtime=None, links_path=None):
 
     def page(title, body, message="", subtitle=""):
         response = make_response(render_template_string(PAGE, title=title, body=body, message=message,
-                                                        subtitle=subtitle, user=current(), csrf_token=csrf()))
+                                                        subtitle=subtitle, user=current(), csrf_token=csrf(),
+                                                        portal_css=portal_css))
         response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -196,7 +198,7 @@ def create_app(runtime=None, links_path=None):
         return page("注册", register_form(), "页面已更新，请重新填写" if request.args.get("expired") else "")
 
     def register_form():
-        return f"<form class='panel auth-panel' method=post>{form_csrf()}<p class=form-intro>创建账号后，管理员会为你开通账号并设置可见链接。</p><label>账号<input name=username type=text autocomplete=username required minlength=3 maxlength=32 placeholder='3–32 位小写字母、数字或下划线'></label><label>密码<input name=password type=password autocomplete=new-password required minlength=10 maxlength=128 placeholder='至少 10 位'></label><button class=full-button>创建账号</button><p class=form-foot>已有账号？<a href='/login'>直接登录</a></p></form>"
+        return f"<form class='panel auth-panel' method=post>{form_csrf()}<p class=form-intro>创建账号后，管理员审批后即可查看全部项目。</p><label>账号<input name=username type=text autocomplete=username required minlength=3 maxlength=32 placeholder='3–32 位小写字母、数字或下划线'></label><label>密码<input name=password type=password autocomplete=new-password required minlength=10 maxlength=128 placeholder='至少 10 位'></label><button class=full-button>创建账号</button><p class=form-foot>已有账号？<a href='/login'>直接登录</a></p></form>"
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -217,7 +219,7 @@ def create_app(runtime=None, links_path=None):
         return page("登录", login_form(target), "页面已更新，请重新填写" if request.args.get("expired") else "")
 
     def login_form(target):
-        return f"<form class='panel auth-panel' method=post>{form_csrf()}<input type=hidden name=next value='{escape(target)}'><p class=form-intro>登录后查看你有权限使用的应用。</p><label>账号<input name=username type=text autocomplete=username required placeholder='请输入账号'></label><label>密码<input name=password type=password autocomplete=current-password required placeholder='请输入密码'></label><label class=check-label><input name=remember type=checkbox value=1> 保持登录 30 天</label><button class=full-button>进入工作空间 <span aria-hidden=true>↗</span></button><p class=form-foot>还没有账号？<a href='/register'>申请注册</a></p></form>"
+        return f"<form class='panel auth-panel' method=post>{form_csrf()}<input type=hidden name=next value='{escape(target)}'><p class=form-intro>登录后查看项目列表。</p><label>账号<input name=username type=text autocomplete=username required placeholder='请输入账号'></label><label>密码<input name=password type=password autocomplete=current-password required placeholder='请输入密码'></label><label class=check-label><input name=remember type=checkbox value=1> 保持登录 30 天</label><button class=full-button>进入工作空间 <span aria-hidden=true>↗</span></button><p class=form-foot>还没有账号？<a href='/register'>申请注册</a></p></form>"
 
     @app.post("/logout")
     def logout():
@@ -235,17 +237,14 @@ def create_app(runtime=None, links_path=None):
             return response
         if user["must_change"]:
             return redirect("/settings")
-        with db() as conn:
-            grants = {r[0] for r in conn.execute("SELECT app_id FROM grants WHERE user_id=?", (user["id"],))}
-        links = [item for item in apps().values()
-                 if user["role"] == "admin" or item.id in grants]
+        links = list(apps().values())
         categories = list(dict.fromkeys(item.category for item in links))
         query = request.args.get("q", "").strip()
         category = request.args.get("category", "")
         visible = [item for item in links if (not category or item.category == category)
                    and (not query or query.casefold() in
                         f"{item.name} {item.description} {item.category}".casefold())]
-        body = render_template("links.html", links=visible, categories=categories,
+        body = render_template("links.html", links=visible, all_links=links, categories=categories,
                                query=query, category=category, total=len(links))
         return page("我的导航", body, subtitle="应用、工具与常用资源，一处直达。")
 
@@ -276,17 +275,14 @@ def create_app(runtime=None, links_path=None):
             return response
         with db() as conn:
             users = conn.execute("SELECT id,username,role,status,must_change FROM users ORDER BY id DESC").fetchall()
-            grants = {(r[0], r[1]) for r in conn.execute("SELECT user_id,app_id FROM grants")}
         cards = []
         for user in users:
             state_label = {"pending": "待审批", "active": "已启用", "disabled": "已禁用"}[user["status"]]
-            controls = f"<form class=user-form method=post action='/admin/user/{user['id']}'>{form_csrf()}<div class=user-fields><label>账号状态<select name=status><option value=pending {'selected' if user['status']=='pending' else ''}>待审批</option><option value=active {'selected' if user['status']=='active' else ''}>启用</option><option value=disabled {'selected' if user['status']=='disabled' else ''}>禁用</option></select></label><fieldset><legend>链接可见性</legend><div class=grant-list>"
-            controls += "".join(f"<label class=check-label><input type=checkbox name=grant value='{a.id}' {'checked' if (user['id'],a.id) in grants else ''}> {escape(a.name)}</label>" for a in apps().values())
-            controls += "</div></fieldset></div><button>保存设置</button></form>"
+            controls = f"<form class=user-form method=post action='/admin/user/{user['id']}'>{form_csrf()}<div class=user-fields><label>账号状态<select name=status><option value=pending {'selected' if user['status']=='pending' else ''}>待审批</option><option value=active {'selected' if user['status']=='active' else ''}>启用</option><option value=disabled {'selected' if user['status']=='disabled' else ''}>禁用</option></select></label></div><button>保存设置</button></form>"
             controls += f"<form class=reset-form method=post action='/admin/reset/{user['id']}'>{form_csrf()}<label>重置密码<input type=password name=password autocomplete=new-password minlength=10 maxlength=128 required placeholder='输入至少 10 位的临时密码'></label><button class=quiet>重置</button></form>"
             cards.append(f"<article class='card user-card'><div class=user-card-heading><div><h2>{escape(user['username'])}</h2><span class=role-label>{'管理员' if user['role']=='admin' else '普通用户'}</span></div><span class='status status-{escape(user['status'])}'><span class=status-dot></span>{state_label}</span></div>{controls}</article>")
         body = "<div class=user-grid>" + "".join(cards) + "</div>"
-        return page("账号管理", body, subtitle="审批账号并设置链接可见性。链接目标的访问权限由各服务自行管理。")
+        return page("账号管理", body, subtitle="审批与管理账号。所有已启用账号默认看到全部项目，目标服务自行管理访问权限。")
 
     @app.post("/admin/user/<int:user_id>")
     def update_user(user_id):
@@ -294,8 +290,7 @@ def create_app(runtime=None, links_path=None):
         if response:
             return response
         status = request.form.get("status")
-        chosen = set(request.form.getlist("grant"))
-        if status not in ("pending", "active", "disabled") or not chosen <= apps().keys():
+        if status not in ("pending", "active", "disabled"):
             abort(400)
         with db() as conn:
             target = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
@@ -306,9 +301,7 @@ def create_app(runtime=None, links_path=None):
             conn.execute("UPDATE users SET status=? WHERE id=?", (status, user_id))
             if status == "disabled":
                 conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM grants WHERE user_id=?", (user_id,))
-            conn.executemany("INSERT INTO grants VALUES(?,?)", ((user_id, app_id) for app_id in chosen))
-            audit(conn, actor["username"], "user_update", f"{target['username']} status={status} grants={','.join(sorted(chosen))}")
+            audit(conn, actor["username"], "user_update", f"{target['username']} status={status}")
         return redirect("/admin")
 
     @app.post("/admin/reset/<int:user_id>")

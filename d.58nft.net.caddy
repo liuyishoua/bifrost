@@ -1,0 +1,17 @@
+# Bifrost owns the domain homepage; existing model API clients retain their routes.
+https://d.58nft.net {
+    # Old Open WebUI tabs may retain its client-side /error or /auth route.
+    @old_model_page path /error /auth /auth/
+    handle @old_model_page {
+        header Clear-Site-Data "\"cache\""
+        header Cache-Control "no-store"
+        redir * /login 302
+    }
+    @model_api path /v1/* /inference/v1/*
+    handle @model_api {
+        import "/etc/caddy/acli.d/routes/leo-model-bridge.caddy"
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8790
+    }
+}

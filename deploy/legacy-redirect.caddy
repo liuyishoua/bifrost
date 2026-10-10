@@ -1,0 +1,8 @@
+{
+    admin off
+    auto_https disable_redirects
+}
+https://d.58nft.net:9443 {
+    tls /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/d.58nft.net/d.58nft.net.crt /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/d.58nft.net/d.58nft.net.key
+    redir https://d.58nft.net{uri} 308
+}

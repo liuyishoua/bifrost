@@ -21,3 +21,32 @@ applications/**/.runtime/
 
 # Optional private deployment configuration
 .local-deploy/
+
+# Private local state; publish source and reproducible examples only.
+.local/
+.runtime/
+.venv/
+venv/
+node_modules/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log
+*.pid
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+!.env.template
+!*.env.example
+docs/*verification*.json
+docs/acceptance.json
+docs/previews/*production*

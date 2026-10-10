@@ -1,0 +1,13 @@
+[Unit]
+Description=Bifrost website portal
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/leo-project/bifrost
+Environment=BIFROST_PUBLIC_ORIGIN=https://d.58nft.net
+ExecStart=/home/ubuntu/leo-project/bifrost/.venv/bin/python /home/ubuntu/leo-project/bifrost/portal.py
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target

@@ -62,13 +62,13 @@ class PortalTests(unittest.TestCase):
 
     def test_search_category_empty_and_catalog_reload(self):
         self.login()
-        self.assertNotIn(b'127.0.0.1:8767', self.client.get('/?q=dOuYiN').data)
-        self.assertNotIn(b'https://dy.example', self.client.get('/?category=工具').data)
+        self.assertRegex(self.client.get('/?q=dOuYiN').get_data(as_text=True), r'<li data-project-id="ticket"[^>]* hidden>')
+        self.assertRegex(self.client.get('/?category=工具').get_data(as_text=True), r'<li data-project-id="douyin"[^>]* hidden>')
         self.assertIn('没有匹配的链接'.encode(), self.client.get('/?q=missing').data)
         self.catalog.write_text('[]')
         self.assertIn('还没有链接'.encode(), self.client.get('/').data)
 
-    def test_registration_visibility_reset_and_disable_keep_existing_accounts(self):
+    def test_registration_default_project_list_reset_and_disable_keep_existing_accounts(self):
         user = self.app.test_client()
         self.post('/register', {"username": "alice", "password": "long-password1"}, user)
         self.assertEqual(self.post('/login', {"username": "alice", "password": "long-password1"}, user).status_code, 403)
@@ -76,15 +76,20 @@ class PortalTests(unittest.TestCase):
         with sqlite3.connect(self.db) as conn:
             uid = conn.execute("SELECT id FROM users WHERE username='alice'").fetchone()[0]
         self.post(f'/admin/user/{uid}', {"status": "active", "grant": "douyin"})
-        # Reopening the same database preserves accounts and link visibility settings.
+        # Reopening the same database preserves accounts; all projects are visible by default.
         reopened = create_app(self.root, links_path=self.catalog).test_client()
         self.assertEqual(self.post('/login', {"username": "alice", "password": "long-password1"}, reopened).status_code, 302)
         self.assertIn(b'https://dy.example', reopened.get('/').data)
-        self.assertNotIn(b'127.0.0.1:8767', reopened.get('/').data)
-        self.assertNotIn(b'category=%E5%B7%A5%E5%85%B7', reopened.get('/').data)
+        self.assertIn(b'127.0.0.1:8767', reopened.get('/').data)
+        self.assertIn(b'category=%E5%B7%A5%E5%85%B7', reopened.get('/').data)
         self.assertEqual(reopened.get('/admin').status_code, 403)
+        # New projects appear for existing ordinary users without per-link grants.
+        entries = json.loads(self.catalog.read_text())
+        entries.append({"id": "new-project", "name": "New project", "url": "https://new.example/"})
+        self.catalog.write_text(json.dumps(entries))
+        self.assertIn(b'https://new.example/', reopened.get('/').data)
         self.post(f'/admin/user/{uid}', {"status": "active"})
-        self.assertNotIn(b'https://dy.example', reopened.get('/').data)
+        self.assertIn(b'https://dy.example', reopened.get('/').data)
         self.post(f'/admin/reset/{uid}', {"password": "temporary123"})
         self.assertEqual(reopened.get('/').location, '/login')
         self.assertEqual(self.post('/login', {"username": "alice", "password": "temporary123"}, reopened).location, '/settings')
@@ -109,12 +114,33 @@ class PortalTests(unittest.TestCase):
                 load_links(self.catalog)
         self.catalog.write_text(json.dumps([{"id": "test", "name": "<script>alert(1)</script>", "url": "https://example.com/"}]))
         response = self.client.get('/')
-        self.assertNotIn(b'<script>', response.data)
+        self.assertNotIn(b'<script>alert(1)</script>', response.data)
         self.assertIn(b'&lt;script&gt;', response.data)
         entry = {"id": "same", "name": "test", "url": "https://example.com/"}
         self.catalog.write_text(json.dumps([entry, entry]))
         with self.assertRaises(ValueError):
             load_links(self.catalog)
+
+    def test_unpublished_project_is_listed_without_a_broken_link(self):
+        self.catalog.write_text(json.dumps([
+            {"id": "xianyuapis", "name": "XianYuApis", "url": "", "enabled": False},
+        ]))
+        self.login()
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'XianYuApis', response.data)
+        self.assertIn('未部署网站'.encode(), response.data)
+        self.assertIn(b'aria-disabled="true"', response.data)
+        self.assertNotIn(b'href=""', response.data)
+        self.assertNotIn(b'class="app-link" href=', response.data)
+        for entry in (
+            {"id": "bad", "name": "Bad", "url": ""},
+            {"id": "bad", "name": "Bad", "url": "", "enabled": "false"},
+            {"id": "bad", "name": "Bad", "url": "javascript:alert(1)", "enabled": False},
+        ):
+            self.catalog.write_text(json.dumps([entry]))
+            with self.subTest(entry=entry), self.assertRaises(ValueError):
+                load_links(self.catalog)
 
     def test_portal_trusts_gateway_forwarded_origin_on_loopback(self):
         with patch.object(sys, "argv", ["portal.py"]), patch.object(portal, "create_app", return_value=object()), patch.object(portal, "serve") as serve:

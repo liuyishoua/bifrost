@@ -1,16 +1,100 @@
 [
   {
-    "name": "抢票工作台",
+    "name": "ticket",
     "description": "查询车票与管理抢票任务",
     "category": "应用",
     "url": "https://d.58nft.net:9444/",
     "id": "ticket"
   },
   {
-    "name": "抖音流量矩阵",
+    "name": "douyin",
     "description": "账号、搜索与消息工作台",
     "category": "应用",
     "url": "https://d.58nft.net:9445/",
     "id": "douyin"
+  },
+  {
+    "id": "model-bridge",
+    "name": "model-bridge",
+    "description": "通过 Open WebUI 使用已接入的模型",
+    "category": "AI 工具",
+    "url": "https://d.58nft.net:9449/"
+  },
+  {
+    "id": "multica",
+    "name": "multica",
+    "description": "人与 AI Agent 协作管理任务",
+    "category": "AI 工具",
+    "url": "https://d.58nft.net:9447/login"
+  },
+  {
+    "id": "xianyuapis",
+    "name": "xianyu",
+    "description": "商品管理、消息沟通、图片发布与账号连接",
+    "category": "应用",
+    "url": "https://d.58nft.net:9448/",
+    "enabled": true
+  },
+  {
+    "id": "xhs-all-in-one",
+    "name": "xhs",
+    "description": "作者原版：账号矩阵、笔记发现、内容库、AI 改写与发布中心",
+    "category": "应用",
+    "url": "https://d.58nft.net:9450/",
+    "enabled": true
+  },
+  {
+    "id": "bilibiliapis",
+    "name": "bilibili",
+    "description": "视频搜索、详情评论、UP 主作品、收藏与文字动态",
+    "category": "应用",
+    "url": "https://d.58nft.net:9451/",
+    "enabled": true
+  },
+  {
+    "id": "weiboapis",
+    "name": "weibo",
+    "description": "微博搜索、用户动态、评论研究、收藏与文字发布",
+    "category": "应用",
+    "url": "https://d.58nft.net:9452/",
+    "enabled": true
+  },
+  {
+    "id": "jdapis",
+    "name": "jd",
+    "description": "商品研究、价格快照、商品评价、关注与订单查询",
+    "category": "应用",
+    "url": "https://d.58nft.net:9453/",
+    "enabled": true
+  },
+  {
+    "id": "kuaishou-spider",
+    "name": "kuaishou",
+    "description": "作品搜索、创作者主页、评论、账号列表与直播状态",
+    "category": "应用",
+    "url": "https://d.58nft.net:9454/",
+    "enabled": true
+  },
+  {
+    "id": "zhihuapis",
+    "name": "zhihu",
+    "description": "文章与回答评论、楼中楼采集、研究笔记与资料导出",
+    "category": "应用",
+    "url": "https://d.58nft.net:9455/",
+    "enabled": true
+  },
+  {
+    "id": "channel",
+    "name": "channel",
+    "description": "平台消息队列、Agent 分流、任务归并与模型结果回传",
+    "category": "应用",
+    "url": "https://d.58nft.net:9456/"
+  },
+  {
+    "id": "headquarters",
+    "name": "headquarters",
+    "description": "统一管理业务目标、阶段、平台账号与 Agent 分工，追踪执行回执和业务结果",
+    "category": "应用",
+    "url": "https://d.58nft.net:9457/"
   }
 ]
