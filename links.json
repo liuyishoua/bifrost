@@ -7,11 +7,19 @@
     "id": "ticket"
   },
   {
-    "name": "douyin",
-    "description": "账号、搜索与消息工作台",
+    "name": "douyin-send",
+    "description": "原抖音发送工作台：账号、搜索与批量消息任务",
     "category": "应用",
     "url": "https://d.58nft.net:9445/",
     "id": "douyin"
+  },
+  {
+    "id": "douyin-monitor",
+    "name": "douyin",
+    "description": "账号目标、持续运营计划、Agent 执行、互动处理与批准",
+    "category": "应用",
+    "url": "https://d.58nft.net:9459/",
+    "enabled": true
   },
   {
     "id": "model-bridge",
@@ -96,5 +104,19 @@
     "description": "统一管理业务目标、阶段、平台账号与 Agent 分工，追踪执行回执和业务结果",
     "category": "应用",
     "url": "https://d.58nft.net:9457/"
+  },
+  {
+    "id": "account-maintenance",
+    "name": "account-maintenance · 账号中心",
+    "description": "账号矩阵、主动登录计划与断连恢复工单",
+    "category": "工具",
+    "url": "https://d.58nft.net:9458/"
+  },
+  {
+    "id": "ops-hub",
+    "name": "ops-hub",
+    "description": "独立运营应用中心：统一身份、多平台入口与账号归属",
+    "category": "应用",
+    "url": "https://d.58nft.net:9461/"
   }
 ]

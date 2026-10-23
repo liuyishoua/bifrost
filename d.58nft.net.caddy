@@ -1,5 +1,10 @@
 # Bifrost owns the domain homepage; existing model API clients retain their routes.
 https://d.58nft.net {
+    # Owned-phone webhook uses standard HTTPS; authentication stays in account-maintenance.
+    handle /mobile-sms/inbound/* {
+        uri replace /mobile-sms/ /api/sms-relay/
+        reverse_proxy 127.0.0.1:8785
+    }
     # Old Open WebUI tabs may retain its client-side /error or /auth route.
     @old_model_page path /error /auth /auth/
     handle @old_model_page {
