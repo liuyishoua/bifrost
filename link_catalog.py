@@ -5,6 +5,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
+DIRECTORY_GROUPS = (
+    ("operations", "运营工作区", "从运营中心开始，也可以展开直达各平台与运营工具。"),
+    ("ai", "AI 与协作", "模型聊天、人与 AI 协作及任务管理。"),
+    ("life", "生活服务", "共享点单、出行抢票等日常服务。"),
+    ("games", "游戏娱乐", "随时开一局，挑战个人纪录，收集高光时刻。"),
+    ("independent", "其他应用", "尚未归类的应用与工具。"),
+)
+CATEGORY_ALIASES = {"AI 工具": "AI 与协作", "应用": "", "工具": "运营工作区"}
+
 
 def load_links(path):
     """Read only the catalog, without discovering or contacting applications."""
@@ -17,11 +26,16 @@ def load_links(path):
         if not isinstance(entry, dict):
             raise ValueError(f"第 {index} 个链接必须是对象")
         values = {}
-        for key in ("id", "name", "url", "description", "category"):
+        for key in ("id", "name", "url", "description", "category", "group"):
             value = entry.get(key, "")
             if not isinstance(value, str):
                 raise ValueError(f"第 {index} 个链接的 {key} 必须是字符串")
             values[key] = value.strip()
+        category_groups = {label: key for key, label, _ in DIRECTORY_GROUPS}
+        category_groups["AI 工具"] = "ai"
+        values["group"] = values["group"] or category_groups.get(values["category"], "independent")
+        if values["group"] not in {key for key, _, _ in DIRECTORY_GROUPS}:
+            raise ValueError(f"第 {index} 个链接的 group 必须是 operations、ai、life、games 或 independent")
         if not re.fullmatch(r"[a-z0-9_-]{1,64}", values["id"]) or values["id"] in seen:
             raise ValueError(f"第 {index} 个链接需要唯一的 id（小写字母、数字、下划线、短横线）")
         seen.add(values["id"])

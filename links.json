@@ -1,122 +1,154 @@
 [
   {
-    "name": "ticket",
+    "name": "ticket · 抢票",
     "description": "查询车票与管理抢票任务",
-    "category": "应用",
+    "category": "生活服务",
     "url": "https://d.58nft.net:9444/",
-    "id": "ticket"
+    "id": "ticket",
+    "group": "life"
   },
   {
-    "name": "douyin-send",
+    "name": "douyin-send · 原抖音发送工作台",
     "description": "原抖音发送工作台：账号、搜索与批量消息任务",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9445/",
-    "id": "douyin"
+    "id": "douyin",
+    "group": "operations"
   },
   {
     "id": "douyin-monitor",
-    "name": "douyin",
+    "name": "douyin · 抖音",
     "description": "账号目标、持续运营计划、Agent 执行、互动处理与批准",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9459/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "model-bridge",
-    "name": "model-bridge",
-    "description": "通过 Open WebUI 使用已接入的模型",
-    "category": "AI 工具",
-    "url": "https://d.58nft.net:9449/"
+    "name": "model-bridge · 模型聊天",
+    "description": "使用彩虹桥账号自动登录 Open WebUI，个人聊天独立保存；权限由彩虹桥管理",
+    "category": "AI 与协作",
+    "url": "https://d.58nft.net:9449/",
+    "group": "ai"
   },
   {
     "id": "multica",
-    "name": "multica",
+    "name": "multica · AI 协作",
     "description": "人与 AI Agent 协作管理任务",
-    "category": "AI 工具",
-    "url": "https://d.58nft.net:9447/login"
+    "category": "AI 与协作",
+    "url": "https://d.58nft.net:9447/login",
+    "group": "ai"
   },
   {
     "id": "xianyuapis",
-    "name": "xianyu",
+    "name": "xianyu · 闲鱼",
     "description": "商品管理、消息沟通、图片发布与账号连接",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9448/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "xhs-all-in-one",
-    "name": "xhs",
+    "name": "xhs · 小红书",
     "description": "作者原版：账号矩阵、笔记发现、内容库、AI 改写与发布中心",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9450/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "bilibiliapis",
-    "name": "bilibili",
+    "name": "bilibili · B站",
     "description": "视频搜索、详情评论、UP 主作品、收藏与文字动态",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9451/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "weiboapis",
-    "name": "weibo",
+    "name": "weibo · 微博",
     "description": "微博搜索、用户动态、评论研究、收藏与文字发布",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9452/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "jdapis",
-    "name": "jd",
+    "name": "jd · 京东",
     "description": "商品研究、价格快照、商品评价、关注与订单查询",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9453/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "kuaishou-spider",
-    "name": "kuaishou",
+    "name": "kuaishou · 快手",
     "description": "作品搜索、创作者主页、评论、账号列表与直播状态",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9454/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "zhihuapis",
-    "name": "zhihu",
+    "name": "zhihu · 知乎",
     "description": "文章与回答评论、楼中楼采集、研究笔记与资料导出",
-    "category": "应用",
+    "category": "运营工作区",
     "url": "https://d.58nft.net:9455/",
-    "enabled": true
+    "enabled": true,
+    "group": "operations"
   },
   {
     "id": "channel",
-    "name": "channel",
+    "name": "channel · 消息调度",
     "description": "平台消息队列、Agent 分流、任务归并与模型结果回传",
-    "category": "应用",
-    "url": "https://d.58nft.net:9456/"
+    "category": "运营工作区",
+    "url": "https://d.58nft.net:9456/",
+    "group": "operations"
   },
   {
     "id": "headquarters",
-    "name": "headquarters",
+    "name": "headquarters · 经营目标",
     "description": "统一管理业务目标、阶段、平台账号与 Agent 分工，追踪执行回执和业务结果",
-    "category": "应用",
-    "url": "https://d.58nft.net:9457/"
+    "category": "运营工作区",
+    "url": "https://d.58nft.net:9457/",
+    "group": "operations"
   },
   {
     "id": "account-maintenance",
-    "name": "account-maintenance · 账号中心",
+    "name": "account-maintenance · 平台账号维护",
     "description": "账号矩阵、主动登录计划与断连恢复工单",
-    "category": "工具",
-    "url": "https://d.58nft.net:9458/"
+    "category": "运营工作区",
+    "url": "https://d.58nft.net:9458/",
+    "group": "operations"
   },
   {
     "id": "ops-hub",
-    "name": "ops-hub",
-    "description": "独立运营应用中心：统一身份、多平台入口与账号归属",
-    "category": "应用",
-    "url": "https://d.58nft.net:9461/"
+    "name": "ops-hub · 运营工作台",
+    "description": "多平台运营、任务入口与 AI 对话",
+    "category": "运营工作区",
+    "url": "https://d.58nft.net:9461/",
+    "group": "operations"
+  },
+  {
+    "id": "coffee-orders",
+    "name": "family-perks · 一家会员权益共享点单",
+    "description": "彩虹桥统一登录与授权，会员权益共享点单；个人订单、管理员审批",
+    "category": "生活服务",
+    "url": "https://d.58nft.net:9462/",
+    "group": "life"
+  },
+  {
+    "id": "rift",
+    "name": "rift · 虹域：光轨围猎",
+    "description": "彩虹桥登录后默认开放，个人云端战绩；按住描线、松手围猎",
+    "category": "游戏娱乐",
+    "group": "games",
+    "url": "https://d.58nft.net:9463/"
   }
 ]

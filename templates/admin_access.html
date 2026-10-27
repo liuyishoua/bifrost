@@ -1,0 +1,90 @@
+<section data-admin-directory>
+<nav class="access-tabs" aria-label="用户与权限管理">
+<a href="/admin" data-admin-tab="users" id="admin-tab-users"{% if active_tab == 'users' %} aria-current="page"{% endif %}>用户管理</a>
+<a href="/admin?tab=requests" data-admin-tab="requests" id="admin-tab-requests"{% if active_tab == 'requests' %} aria-current="page"{% endif %}>权限申请 <span>{{ pending|length }}</span></a>
+<a href="/admin?tab=audit" data-admin-tab="audit" id="admin-tab-audit"{% if active_tab == 'audit' %} aria-current="page"{% endif %}>操作记录</a>
+<a href="/admin?tab={{ active_tab }}" data-admin-refresh>刷新列表</a>
+</nav>
+<div data-admin-panel="users" aria-labelledby="admin-tab-users"{% if active_tab != 'users' %} hidden{% endif %}>
+<section class="panel user-directory" aria-label="用户列表">
+<div class="user-directory-toolbar">
+<div><h2>用户列表 <span class="user-count">{{ members|length }}</span></h2><p>{{ '可调整用户身份、账号与应用权限。' if actor.is_superadmin else '仅可管理普通用户；管理员身份由超级管理员分配。' }}</p></div>
+<label class="user-search"><span class="sr-only">搜索用户</span><input type="search" id="user-search" placeholder="搜索用户名" autocomplete="off"></label>
+</div>
+<div class="user-table-heading" aria-hidden="true"><span>用户</span><span>身份与状态</span><span>登录密码</span><span>应用权限</span><span>操作</span></div>
+<div class="user-rows">
+{% for member in members %}
+<article class="user-row{% if member.is_superadmin %} user-row-protected{% elif not member.can_manage %} user-row-readonly{% endif %}" data-user-id="{{ member.id }}" data-search="{{ member.username|lower }}">
+<div class="user-person"><span class="user-avatar" aria-hidden="true">{{ member.username[:1]|upper }}</span><div><h3>{{ member.username }}</h3><span class="user-meta">{% if actor.identity_id == member.id %}当前账号 · {% endif %}ID {{ member.id }}</span></div></div>
+<form class="user-identity-form" method="post" action="/admin/accounts/{{ member.id }}" data-identity-form>
+{{ form_csrf()|safe }}<input type="hidden" name="intent" value="account"><input type="hidden" name="revision" value="{{ member.revision }}">
+<label><span class="sr-only">{{ member.username }}的身份</span><select name="role"{% if not member.can_manage or not actor.is_superadmin %} disabled title="{{ '超级管理员身份受保护' if member.is_superadmin else '只有超级管理员可以调整身份' }}"{% endif %} aria-label="{{ member.username }}的身份"><option value="user"{% if member.role == 'user' %} selected{% endif %}>普通用户</option>{% if actor.is_superadmin or member.role == 'admin' %}<option value="admin"{% if member.role == 'admin' %} selected{% endif %}>{{ '超级管理员' if member.is_superadmin else '管理员' }}</option>{% endif %}</select></label>
+<label><span class="sr-only">{{ member.username }}的状态</span><select name="status"{% if not member.can_manage %} disabled{% endif %} aria-label="{{ member.username }}的状态"><option value="active"{% if member.status == 'active' %} selected{% endif %}>已启用</option><option value="disabled"{% if member.status == 'disabled' %} selected{% endif %}>已停用</option></select></label>
+<button type="submit" class="quiet row-save" disabled>保存</button>
+</form>
+<div class="user-password-cell" data-password-cell>
+<span class="user-mobile-label">登录密码</span><div class="password-display"><span class="saved-password" data-saved-password>{{ '已保护' if not member.can_manage else '••••••' }}</span><button type="button" class="saved-password-toggle" data-reveal-password data-user="{{ member.id }}" data-revision="{{ member.revision }}" aria-label="显示 {{ member.username }} 的密码" aria-pressed="false"{% if not member.can_manage %} disabled title="仅可查看低于自己级别账号的密码"{% endif %}>显示</button></div>
+{% if member.can_manage and not member.password_available %}<small class="password-sync-hint" title="需使用 {{ member.username }} 账号退出并重新登录，或由有权限的管理员重设该账号密码。管理员重新登录不会同步其他账号。">待 {{ member.username }} 登录同步</small>{% endif %}
+<p class="password-view-error" data-password-error role="status" hidden></p>
+</div>
+<div class="user-permissions-summary"><span class="user-mobile-label">应用权限</span><span>{{ '全部应用' if member.role == 'admin' else '已授权 ' ~ member.permission_count ~ ' 个' }}</span></div>
+<div class="user-row-actions">
+<button type="button" class="quiet" data-permissions data-member="{{ {'id': member.id, 'username': member.username, 'revision': member.revision, 'role': member.role, 'apps': member.apps}|tojson|forceescape }}"{% if not member.can_manage %} disabled title="仅可管理低于自己级别的账号"{% endif %}>管理权限</button>
+<button type="button" class="quiet" data-credentials data-member="{{ {'id': member.id, 'username': member.username, 'revision': member.revision}|tojson|forceescape }}"{% if not member.can_manage or actor.identity_id == member.id %} disabled title="不能代改超级管理员或当前账号，请使用个人设置"{% endif %}>编辑账号</button>
+<button type="button" class="danger-text" data-delete data-member="{{ {'id': member.id, 'username': member.username, 'revision': member.revision}|tojson|forceescape }}"{% if not member.can_manage or actor.identity_id == member.id %} disabled title="超级管理员或当前账号不能删除"{% endif %}>删除</button>
+</div>
+</article>
+{% endfor %}
+</div>
+<p class="user-list-empty" id="user-list-empty"{% if members %} hidden{% endif %}>没有符合条件的用户。</p>
+<div class="user-directory-footer"><span id="user-list-count" role="status">共 {{ members|length }} 位用户</span><span>身份或状态变更后，该用户需重新登录。</span></div>
+</section>
+<dialog class="account-dialog permission-dialog" id="permissions-dialog" aria-labelledby="permissions-title" aria-describedby="permissions-description">
+<form method="post" id="permissions-form">
+{{ form_csrf()|safe }}<input type="hidden" name="intent" value="permissions"><input type="hidden" name="revision">
+<div class="account-dialog-header"><div><p class="dialog-eyebrow" id="permissions-user"></p><h2 id="permissions-title">应用权限</h2></div><button type="button" class="quiet dialog-close" data-close aria-label="关闭权限设置">×</button></div>
+<div class="account-dialog-body">
+<p class="permission-kind" id="permissions-description">勾选要开放的应用，保存后立即生效，无需用户先提交申请。</p>
+<p class="permission-note" id="permissions-admin-note" hidden>管理员拥有全部已接入应用的权限。如需限制应用，请先在用户列表中将身份改为普通用户。</p>
+<div class="permission-selection-tools" id="permission-selection-tools"><span id="permission-selection-count" role="status"></span><div><button type="button" class="text-button" id="permissions-all">全选</button><button type="button" class="text-button" id="permissions-none">清空</button></div></div>
+<fieldset class="permission-options"><legend class="sr-only">应用使用权限</legend>
+{% for item in applications %}<label class="permission-option{% if item.policy != 'approval' %} permission-fixed{% endif %}">
+<input type="checkbox"{% if item.policy == 'approval' %} name="apps" value="{{ item.id }}" data-app-choice{% else %} disabled{% if item.policy == 'basic' %} checked{% endif %}{% endif %}>
+<span><strong>{{ item.name }}</strong><small>{% if item.policy == 'basic' %}默认开放{% elif item.policy == 'independent' %}独立登录，权限由应用管理{% elif item.space == 'shared' %}共享空间 · 可查看并操作现有数据{% elif item.space == 'family' %}共享会员与额度 · 订单按用户保存{% else %}个人工作台{% endif %}</small></span></label>{% endfor %}
+</fieldset>
+</div>
+<div class="account-dialog-footer"><button type="button" class="quiet" data-close>取消</button><button type="submit" id="permissions-save">保存权限</button></div>
+</form>
+</dialog>
+<dialog class="account-dialog deletion-dialog" id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+<form method="post" id="delete-form">
+{{ form_csrf()|safe }}<input type="hidden" name="revision"><input type="hidden" name="username">
+<div class="account-dialog-header"><h2 id="delete-title">删除用户</h2><button type="button" class="quiet dialog-close" data-close aria-label="关闭删除确认">×</button></div>
+<div class="account-dialog-body"><p>确定删除用户 <strong id="delete-username"></strong>？</p><p class="permission-kind" id="delete-description">删除后，该用户将退出登录，所有应用授权被收回。已产生的订单、聊天等记录保留。此操作不可撤销，用户名将不再分配。</p></div>
+<div class="account-dialog-footer"><button type="button" class="quiet" data-close autofocus>取消</button><button type="submit" class="danger-button">确认删除</button></div>
+</form>
+</dialog>
+<dialog class="account-dialog credentials-dialog" id="credentials-dialog" aria-labelledby="credentials-title">
+<form method="post" id="credentials-form" autocomplete="off">
+{{ form_csrf()|safe }}<input type="hidden" name="revision">
+<div class="account-dialog-header"><div><p class="dialog-eyebrow" id="credentials-user"></p><h2 id="credentials-title">编辑账号</h2></div><button type="button" class="quiet dialog-close" data-close aria-label="关闭账号编辑">×</button></div>
+<div class="account-dialog-body credentials-fields">
+<label>用户名<input type="text" name="username" required minlength="3" maxlength="80" autocomplete="off"></label>
+<label for="admin-new-password">设置新密码 <span class="field-optional">选填</span></label>
+<div class="password-field"><input id="admin-new-password" type="password" name="new_password" autocomplete="new-password" maxlength="128" placeholder="留空则保留原密码"><button type="button" class="password-toggle" data-password-toggle aria-controls="admin-new-password" aria-pressed="false">显示</button></div>
+<p class="permission-kind">保存后可在用户列表点击“显示”查看密码。密码非空即可，1 位也可以。</p>
+<p class="permission-note">保存修改后，该用户需重新登录。已有订单、聊天和战绩归属不变。</p>
+</div>
+<div class="account-dialog-footer"><button type="button" class="quiet" data-close>取消</button><button type="submit">保存账号</button></div>
+</form>
+</dialog>
+</div>
+<section class="permission-grid" data-admin-panel="requests" aria-labelledby="admin-tab-requests"{% if active_tab != 'requests' %} hidden{% endif %}>
+{% for row in pending %}<article class="panel" data-review="{{ row.user_id }}/{{ row.app_id }}"><div class="permission-card-heading"><h2>{{ row.username }} → {{ row.name }}</h2><span class="permission-state state-pending">待审批</span></div><p class="permission-kind">{{ '共享工作空间，批准后可查看和操作已有数据。' if row.space == 'shared' else '个人工作台，数据按用户账号隔离。' }}</p><p class="permission-note">{{ row.reason }}</p>
+<form method="post" action="/admin/requests/{{ row.user_id }}/{{ row.app_id }}">{{ form_csrf()|safe }}<label>审批说明（拒绝时必填）<textarea name="note" rows="3" maxlength="500" required></textarea></label><div class="permission-actions"><button name="decision" value="approved" formnovalidate{% if row.user_status != 'active' or not row.can_review %} disabled{% endif %}>同意开通</button><button class="quiet" name="decision" value="rejected"{% if not row.can_review %} disabled{% endif %}>拒绝申请</button></div>{% if row.user_status != 'active' %}<p class="permission-kind">请先启用该账号，再批准申请。</p>{% endif %}</form></article>{% else %}<p class="panel">当前没有待审批申请。</p>{% endfor %}
+</section>
+<section class="panel permission-audit" data-admin-panel="audit" aria-labelledby="admin-tab-audit"{% if active_tab != 'audit' %} hidden{% endif %}><table><thead><tr><th>时间（UTC）</th><th>操作者</th><th>对象</th><th>操作</th><th>说明</th></tr></thead><tbody>{% for row in audit_rows %}<tr><td>{{ row.created_at }}</td><td>{{ row.actor_name }}</td><td>{{ row.username }}</td><td>{{ {'request':'提交申请','approved':'同意申请','rejected':'拒绝申请','revoked':'收回权限','granted':'直接开通','account_update':'更新账号','disabled':'停用账号','active':'启用账号','deleted':'删除用户','credentials_update':'修改账号密码','password_revealed':'查看密码'}.get(row.action,row.action) }} {{ row.app_id }}</td><td>{{ row.note }}</td></tr>{% else %}<tr><td colspan="5">暂无记录。</td></tr>{% endfor %}</tbody></table></section>
+<p class="sr-only" data-admin-status role="status" aria-live="polite"></p>
+</section>
+<script src="/static/admin-users.js?v=20261027-5" defer></script>
+<script src="/static/admin-tabs.js?v=20261027-1" defer></script>

@@ -68,6 +68,29 @@ class PortalTests(unittest.TestCase):
         self.catalog.write_text('[]')
         self.assertIn('还没有链接'.encode(), self.client.get('/').data)
 
+    def test_game_and_life_categories_render_and_infer_groups(self):
+        self.catalog.write_text(json.dumps([
+            {"id": "rift", "name": "虹域", "category": "游戏娱乐", "url": "https://game.example/"},
+            {"id": "family", "name": "共享点单", "category": "生活服务", "url": "https://family.example/"},
+        ], ensure_ascii=False))
+        self.assertEqual([item.group for item in load_links(self.catalog)], ["games", "life"])
+        self.login()
+        page = self.client.get('/?view=grouped&category=游戏娱乐').get_data(as_text=True)
+        self.assertRegex(page, r'<li data-project-id="family"[^>]* hidden>')
+        self.assertNotRegex(page, r'<li data-project-id="rift"[^>]* hidden>')
+        self.assertIn('data-directory-group="games"', page)
+        self.assertIn('aria-label="按用途分类"', page)
+
+    def test_legacy_category_links_keep_working_with_new_taxonomy(self):
+        self.catalog.write_text(json.dumps([
+            {"id": "ai", "name": "AI 协作", "category": "AI 与协作", "url": "https://ai.example/"},
+            {"id": "game", "name": "游戏", "category": "游戏娱乐", "url": "https://game.example/"},
+        ], ensure_ascii=False))
+        self.login()
+        page = self.client.get('/?category=AI%20工具').get_data(as_text=True)
+        self.assertRegex(page, r'<li data-project-id="game"[^>]* hidden>')
+        self.assertNotRegex(page, r'<li data-project-id="ai"[^>]* hidden>')
+
     def test_registration_default_project_list_reset_and_disable_keep_existing_accounts(self):
         user = self.app.test_client()
         self.post('/register', {"username": "alice", "password": "long-password1"}, user)

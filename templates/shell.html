@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f6f8fc"><title>{{ title }} · 彩虹桥</title>
+<script>(()=>{document.documentElement.classList.add('js');try{const t=localStorage.getItem('workspace-theme')||localStorage.getItem('theme-mode');document.documentElement.dataset.theme=['dark','light'].includes(t)?t:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}catch{}})();</script>
+<style>{{ portal_css|safe }}</style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">跳到主要内容</a>
+<div class="site-shell{{ ' auth-shell' if not user else '' }}">
+<header class="site-header"><div class="header-inner">
+<a class="brand" href="/" aria-label="彩虹桥首页"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span><strong>彩虹桥</strong><small>BIFROST</small></span></a>
+<nav class="site-nav" aria-label="主导航">
+{% if user %}
+{% for path,label in [('/','应用导航'),('/permissions','我的权限'),('/settings','个人设置')] %}<a href="{{ path }}"{% if request.path == path %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+{% if user.role == 'admin' %}<a href="/admin"{% if request.path == '/admin' %} class="active" aria-current="page"{% endif %}>用户与权限</a>{% endif %}
+{% else %}<a href="/login">登录</a><a href="/register">注册</a>{% endif %}
+</nav>
+<div class="header-tools">
+<button type="button" class="theme-toggle quiet" aria-label="切换日夜模式" title="切换日夜模式">◐</button>
+{% if user %}<details class="account-menu"><summary aria-label="{{ user.username }}的账号菜单"><span class="account-avatar" aria-hidden="true">{{ user.username[:1]|upper }}</span><span class="account-menu-name">{{ user.username }}</span><span aria-hidden="true">⌄</span></summary>
+<div class="account-menu-panel"><div class="account-menu-identity"><strong>{{ user.username }}</strong><span>{{ '超级管理员' if user.is_superadmin else '管理员' if user.role == 'admin' else '普通用户' }}</span></div><a href="/settings">账号与密码</a><a href="/permissions">查看我的权限</a>{% if user.role == 'admin' %}<a href="{{ '/admin?tab=audit' if user.identity_id else '/audit' }}">操作记录</a>{% endif %}<form method="post" action="/logout"><input type=hidden name=csrf value="{{ csrf_token }}"><button type="submit">退出登录</button></form></div></details>{% endif %}
+</div>
+</div></header>
+<main id="main-content" class="page-main{{ ' auth-main' if not user else '' }}" tabindex="-1">
+<div class="page-heading"><div><p class="eyebrow">{{ 'WELCOME TO BIFROST' if not user else 'WORKSPACE / BIFROST' }}</p><h1>{{ title }}</h1>{% if subtitle %}<p class="page-subtitle">{{ subtitle }}</p>{% endif %}</div></div>
+{% if message %}<div class="notice notice-{{ feedback }}"{% if feedback == 'success' %} data-toast role="status" aria-live="polite"{% else %} role="alert"{% endif %}><span class="feedback-icon" aria-hidden="true">{{ '✓' if feedback == 'success' else '!' }}</span><span>{{ message }}</span>{% if feedback == 'success' %}<button type="button" class="feedback-close" aria-label="关闭提示">×</button>{% endif %}</div>{% endif %}
+{{ body|safe }}
+</main>
+<footer class="site-footer"><span>彩虹桥 · 连接工作与生活</span><a href="/permissions">查看应用权限 →</a></footer>
+</div>
+<script id="portal-session-state" type="application/json">{{ session_state|tojson }}</script>
+<script src="/static/theme.js"></script><script src="/static/feedback.js?v=20261027-1" defer></script><script src="/static/experience.js?v=20261027-1" defer></script>
+</body></html>

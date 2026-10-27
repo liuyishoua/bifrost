@@ -1,0 +1,11 @@
+<div class="settings-layout">
+<section class="panel profile-panel"><div class="profile-avatar" aria-hidden="true">{{ profile.username[:1]|upper }}</div><h2>{{ profile.username }}</h2><span class="profile-role">{{ '超级管理员' if profile.is_superadmin else '管理员' if profile.role == 'admin' else '普通用户' }}</span><p>一个账号，连接你的应用。</p><a href="/permissions" class="profile-link">查看我的应用权限 →</a>{% if profile.role == 'admin' %}<a href="/admin" class="profile-link">管理用户与权限 →</a>{% endif %}</section>
+<form class="panel settings-panel" method="post">
+{{ form_csrf()|safe }}
+<h2>修改{{ '统一' if unified else '' }}密码</h2>
+<p class="form-intro">{% if unified %}彩虹桥与已接入应用共用此密码。{% endif %}修改后，其他登录会话将退出。</p>
+<label for="current-password">当前密码</label><div class="password-field"><input id="current-password" name="old" type="password" autocomplete="current-password" required><button type="button" class="password-toggle" data-password-toggle aria-controls="current-password" aria-pressed="false">显示</button></div>
+<label for="new-password">新密码</label><div class="password-field"><input id="new-password" name="new" type="password" autocomplete="new-password" maxlength="128" required placeholder="输入新密码，非空即可"><button type="button" class="password-toggle" data-password-toggle aria-controls="new-password" aria-pressed="false">显示</button></div>
+<button class="settings-submit">保存新密码</button>
+</form>
+</div>

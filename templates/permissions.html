@@ -1,0 +1,23 @@
+<section data-permissions-directory>
+<nav class="access-tabs" aria-label="应用权限筛选">
+{% for key,label in [('all','全部应用'),('available','已开通'),('pending','审批中'),('requestable','可申请')] %}<a href="/permissions?state={{ key }}&amp;q={{ query|urlencode }}" data-permission-filter="{{ key }}"{% if state == key %} aria-current="page"{% endif %}>{{ label }} <span>{{ counts[key] }}</span></a>{% endfor %}
+<a href="/permissions?state={{ state }}&amp;q={{ query|urlencode }}" data-permission-refresh>刷新</a>
+</nav>
+<form class="access-search" method="get" action="/permissions"><input type="hidden" name="state" value="{{ state }}"><input name="q" type="search" value="{{ query }}" aria-label="搜索应用权限" placeholder="搜索应用"><button>搜索</button></form>
+<div class="permission-grid">
+{% for item in applications %}
+<article class="panel permission-card{% if selected == item.id %} permission-selected{% endif %}" id="app-{{ item.id }}" data-access-id="{{ item.id }}" data-permission-state="{{ item.state }}" data-permission-requestable="{{ 'true' if item.can_apply else 'false' }}" data-permission-search="{{ (item.name ~ item.id)|lower }}"{% if item.id not in visible_ids %} hidden{% endif %}>
+<div class="permission-card-heading"><div class="permission-app-heading">{% set visual = app_visual(item.id) %}<span class="project-badge badge-{{ visual.tone }}" aria-hidden="true"><img src="{{ url_for('static', filename=visual.src) }}" alt="" width="40" height="40"></span><h2>{{ item.name }}</h2></div><span class="permission-state state-{{ item.state }}">{{ item.state_label }}</span></div>
+<p class="permission-kind">{% if item.id == 'ops-hub' %}登录后默认开放，从这里进入各平台与运营工具。{% elif item.policy == 'independent' %}{{ '管理员提供家庭点单口令。' if item.space == 'family' else '保留原有模型聊天账号，暂不开放注册。' }}{% elif item.id == 'coffee-orders' %}共享品牌会员与点单预算，订单按个人彩虹桥账号保存，由管理员审批。{% elif item.id == 'rift' %}登录后默认开放，个人云端战绩独立保存。{% elif item.space == 'shared' %}共享工作空间，获权成员可查看现有数据并执行相关操作。{% else %}个人工作台，业务数据按账号隔离。{% endif %}</p>
+{% if item.review_note %}<p class="permission-note">管理员说明：{{ item.review_note }}</p>{% endif %}
+{% if item.state == 'pending' %}<p>申请用途：{{ item.reason }}</p><p class="permission-kind">已提交申请，管理员处理后可在这里查看结果。</p>{% endif %}
+{% if item.state == 'available' or item.state == 'independent' %}<a class="permission-open" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ '前往登录' if item.state == 'independent' else '进入应用' }} ↗</a>{% endif %}
+{% if item.can_apply %}<details class="permission-apply"{% if item.id == selected %} open{% endif %}><summary>{{ '重新申请' if item.state in ('revoked','rejected') else '申请使用' }}</summary><form method="post" action="/permissions/apply/{{ item.id }}">{{ form_csrf()|safe }}<label>使用用途<textarea name="reason" rows="3" minlength="2" maxlength="500" required placeholder="说明想用它做什么">{{ item.reason }}</textarea></label>{% if item.space == 'shared' %}<label class="permission-check"><input type="checkbox" name="ack" required>我了解这是共享工作空间，已有数据和操作会与其他获权成员共享。</label>{% endif %}<button>提交申请</button></form></details>{% endif %}
+</article>
+{% endfor %}
+<div class="panel permission-empty" data-permission-empty{% if visible_ids %} hidden{% endif %}><h2>{{ '暂时没有审批中的申请' if state == 'pending' and not query else '没有匹配的应用' }}</h2><p>{{ '需要其他应用时，可切换到“可申请”。' if state == 'pending' and not query else '试试其他关键词，或查看全部应用。' }}</p><a href="/permissions" data-permission-reset>查看全部应用 →</a></div>
+</div>
+<p class="permission-filter-status" data-permission-status role="status" aria-live="polite">显示 {{ visible_ids|length }} 个应用</p>
+</section>
+<script src="{{ url_for('static', filename='permissions.js') }}?v=20261027-1" defer></script>
+{% if selected %}<script>document.getElementById({{ ('app-' + selected)|tojson }})?.scrollIntoView({block:'center'});</script>{% endif %}

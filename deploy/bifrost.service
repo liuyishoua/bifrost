@@ -6,6 +6,7 @@ Wants=network-online.target
 User=ubuntu
 WorkingDirectory=/home/ubuntu/leo-project/bifrost
 Environment=BIFROST_PUBLIC_ORIGIN=https://d.58nft.net
+Environment=OPS_IDENTITY_URL=http://127.0.0.1:8787
 ExecStart=/home/ubuntu/leo-project/bifrost/.venv/bin/python /home/ubuntu/leo-project/bifrost/portal.py
 Restart=always
 RestartSec=3

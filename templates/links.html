@@ -1,82 +1,200 @@
-<form class="search" action="/" method="get" role="search">
-      <label class="sr-only" for="query">搜索链接</label>
-      <input id="query" name="q" value="{{ query }}" placeholder="搜索名称、描述或分类…" type="search">
-      <input type="hidden" name="category" value="{{ category }}">
-      <button type="submit">搜索</button>
-    </form>
-    <nav class="categories" aria-label="链接分类">
-      <a data-category="" href="{{ url_for('home', q=query) }}" {% if not category %}aria-current="page"{% endif %}>全部 <span>{{ total }}</span></a>
-      {% for item in categories %}<a data-category="{{ item }}" href="{{ url_for('home', category=item, q=query) }}" {% if item == category %}aria-current="page"{% endif %}>{{ item }}</a>{% endfor %}
+{% macro project_row(link) -%}
+<li data-project-id="{{ link.id }}" data-category="{{ link.category }}" data-group="{{ link.group }}" data-index="{{ link.index }}" data-access-state="{{ link.access_state }}" data-search="{{ link.search }}"{% if link.id == 'ops-hub' %} class="operations-entry"{% endif %}{% if link not in links %} hidden{% endif %}>
+  {% if link.enabled %}<a class="app-link" href="{{ link.access_url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ link.name }}（在新标签页打开）">{% else %}<div class="app-link app-link-pending" aria-disabled="true">{% endif %}
+    {% set visual = app_visual(link.id) %}<span class="project-badge badge-{{ visual.tone }}" aria-hidden="true"><img src="{{ url_for('static', filename=visual.src) }}" alt="" width="40" height="40" loading="eager" decoding="async"></span>
+    <span class="app-link-copy"><strong>{{ link.name }}</strong>{% if link.description %}<span class="app-link-description">{{ link.description }}</span>{% endif %}</span>
+    <span class="app-access-state access-{{ link.access_state }}">{{ '可直接使用' if link.access_state == 'available' else link.access_label if link.enabled else '未上线' }}</span>
+    <span class="app-link-open">{% if link.enabled %}{{ '进入中心' if link.id == 'ops-hub' else link.access_label }} <span aria-hidden="true">↗</span>{% else %}未部署网站{% endif %}</span>
+  {% if link.enabled %}</a>{% else %}</div>{% endif %}
+  {% if link.enabled %}<button type="button" class="favorite-button" data-favorite="{{ link.id }}" aria-label="收藏 {{ link.name }}" aria-pressed="false" title="收藏应用">☆</button>{% endif %}
+</li>
+{%- endmacro %}
+<section class="directory-toolbar">
+  <div class="directory-access-filters" role="group" aria-label="按使用状态筛选"><button type="button" data-access-filter="all" aria-pressed="true">全部应用</button><button type="button" data-access-filter="available" aria-pressed="false">可直接使用 <span>{{ all_links|selectattr('enabled')|selectattr('access_state','equalto','available')|list|length }}</span></button><button type="button" data-access-filter="favorites" aria-pressed="false">我的收藏 <span data-favorite-count>0</span></button></div>
+  <div class="directory-toolbar-heading"><span class="directory-label">按用途找到应用</span>
+    <nav class="directory-views" aria-label="查看方式">
+      <a data-view="grouped" href="{{ url_for('home', view='grouped', q=query, category=category) }}"{% if view == 'grouped' %} aria-current="page"{% endif %}><span aria-hidden="true">▤</span> 按分组</a>
+      <a data-view="flat" href="{{ url_for('home', view='flat', q=query, category=category) }}"{% if view == 'flat' %} aria-current="page"{% endif %}><span aria-hidden="true">☷</span> 全部平铺</a>
     </nav>
-    <ul class="app-list" aria-label="应用列表">
-      {% for link in all_links %}
-      <li data-project-id="{{ link.id }}" data-category="{{ link.category }}" data-search="{{ (link.name ~ ' ' ~ link.description ~ ' ' ~ link.category).lower() }}"{% if link not in links %} hidden{% endif %}>
-        {% if link.enabled %}<a class="app-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ link.name }}（在新标签页打开）">{% else %}<div class="app-link app-link-pending" aria-disabled="true">{% endif %}
-          <span class="app-link-copy"><strong>{{ link.name }}</strong>{% if link.description %}<span class="app-link-description">{{ link.description }}</span>{% endif %}</span>
-          <span class="category">{{ link.category }}</span>
-          <span class="app-link-url">{{ link.url if link.enabled else '暂无网站入口' }}</span>
-          <span class="app-link-open">{% if link.enabled %}打开 <span aria-hidden="true">↗</span>{% else %}未部署网站{% endif %}</span>
-        {% if link.enabled %}</a>{% else %}</div>{% endif %}
-      </li>
-      {% endfor %}
-      <li class="empty" data-empty{% if links %} hidden{% endif %}><h2>{{ '没有匹配的链接' if query or category else '还没有链接' }}</h2><p>{{ '试试其他关键词或分类。' if query or category else '常用入口将在这里展示。' }}</p><a href="/" data-reset{% if not query and not category %} hidden{% endif %}>查看全部链接</a></li>
-    </ul>
+  </div>
+  <form class="search" action="/" method="get" role="search">
+    <label class="sr-only" for="query">搜索全部入口</label>
+    <input id="query" name="q" value="{{ query }}" placeholder="搜索应用，如小红书、共享点单、虹域…" type="search">
+    <input type="hidden" name="category" value="{{ category }}">
+    <input type="hidden" name="view" value="{{ view }}">
+    <button type="submit">搜索</button>
+  </form>
+  <nav class="categories" aria-label="按用途分类">
+    <a data-category="" href="{{ url_for('home', view=view) }}"{% if not category %} aria-current="page"{% endif %}>全部 <span>{{ total }}</span></a>
+    {% for item in categories %}<a data-category="{{ item }}" href="{{ url_for('home', view=view, category=item) }}"{% if item == category %} aria-current="page"{% endif %}>{{ item }} <span>{{ category_counts[item] }}</span></a>{% endfor %}
+  </nav>
+  <p class="directory-count" role="status" data-result-count>{% if query or category %}找到 {{ links|length }} / {{ total }} 个入口{% else %}共 {{ total }} 个应用与工具{% endif %}</p>
+</section>
+<div data-grouped-directory{% if view != 'grouped' %} hidden{% endif %}>
+  {% for group in groups %}
+  <section class="directory-group" data-directory-group="{{ group.key }}" aria-labelledby="group-{{ group.key }}"{% if not group.visible %} hidden{% endif %}>
+    <header class="directory-group-heading"><div><h2 id="group-{{ group.key }}">{{ group.label }} <span data-group-count>{{ group.visible|length }}</span></h2><p>{{ group.description }}</p></div></header>
+    {% if group.key == 'operations' %}
+      {% set primary = group.links|selectattr('id', 'equalto', 'ops-hub')|list %}
+      {% set children = group.links|rejectattr('id', 'equalto', 'ops-hub')|list %}
+      {% set visible_primary = group.visible|selectattr('id', 'equalto', 'ops-hub')|list %}
+      {% set visible_children = group.visible|rejectattr('id', 'equalto', 'ops-hub')|list %}
+      <ul class="app-list operations-primary" data-operations-primary aria-label="运营中心入口"{% if not visible_primary %} hidden{% endif %}>{% if view == 'grouped' %}{% for link in primary %}{{ project_row(link) }}{% endfor %}{% endif %}</ul>
+      <details class="operations-details" data-operations-details{% if query or category %} open{% endif %}{% if not visible_children %} hidden{% endif %}>
+        <summary><span class="disclosure-arrow" aria-hidden="true">›</span><span>平台与运营工具</span><span class="disclosure-count" data-operations-count>{{ visible_children|length }}</span><span class="disclosure-hint" data-disclosure-hint>{{ '收起入口' if query or category else '展开直达' }}</span></summary>
+        <ul class="app-list" data-group-list="operations" aria-label="平台与运营工具">{% if view == 'grouped' %}{% for link in children %}{{ project_row(link) }}{% endfor %}{% endif %}</ul>
+      </details>
+    {% else %}
+      <ul class="app-list" data-group-list="{{ group.key }}" aria-label="{{ group.label }}">{% if view == 'grouped' %}{% for link in group.links %}{{ project_row(link) }}{% endfor %}{% endif %}</ul>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+<ul class="app-list" data-flat-directory aria-label="全部应用列表"{% if view != 'flat' %} hidden{% endif %}>{% if view == 'flat' %}{% for link in all_links %}{{ project_row(link) }}{% endfor %}{% endif %}</ul>
+<div class="empty" data-empty{% if links %} hidden{% endif %}><h2>{{ '没有匹配的链接' if query or category else '还没有链接' }}</h2><p>{{ '试试其他关键词或分类。' if query or category else '常用入口将在这里展示。' }}</p><a href="/" data-reset{% if not query and not category %} hidden{% endif %}>查看全部链接</a></div>
 <script>
 (() => {
   const form = document.querySelector('.search');
   const search = form.querySelector('[name=q]');
   const categoryField = form.querySelector('[name=category]');
+  const viewField = form.querySelector('[name=view]');
   const tabs = [...document.querySelectorAll('.categories [data-category]')];
-  const rows = [...document.querySelectorAll('.app-list [data-project-id]')];
+  const viewTabs = [...document.querySelectorAll('[data-view]')];
+  const rows = [...document.querySelectorAll('[data-project-id]')].sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index));
+  const groups = [...document.querySelectorAll('[data-directory-group]')];
+  const grouped = document.querySelector('[data-grouped-directory]');
+  const flat = document.querySelector('[data-flat-directory]');
+  const primary = document.querySelector('[data-operations-primary]');
+  const details = document.querySelector('[data-operations-details]');
   const empty = document.querySelector('[data-empty]');
+  const destinations = new Map([...document.querySelectorAll('[data-group-list]')].map(list => [list.dataset.groupList, list]));
+  const categoryAliases = {{ category_aliases|tojson }};
+  const favoriteKey = {{ favorite_key|tojson }};
+  let favorites = new Set();
+  try { const saved = JSON.parse(localStorage.getItem(favoriteKey) || '[]'); if (Array.isArray(saved)) favorites = new Set(saved.filter(id => rows.some(row => row.dataset.projectId === id))); } catch {}
+  let accessFilter = new URLSearchParams(location.search).get('access') || 'all';
+  if (!['all','available','favorites'].includes(accessFilter)) accessFilter = 'all';
+  const accessButtons = [...document.querySelectorAll('[data-access-filter]')];
+  const favoriteButtons = [...document.querySelectorAll('[data-favorite]')];
+  function syncFavorites() {
+    for (const button of favoriteButtons) {
+      const chosen = favorites.has(button.dataset.favorite);
+      button.textContent = chosen ? '★' : '☆';
+      button.setAttribute('aria-pressed', String(chosen));
+      button.setAttribute('aria-label', `${chosen ? '取消收藏' : '收藏'} ${button.closest('[data-project-id]').querySelector('strong').textContent}`);
+      button.title = chosen ? '取消收藏' : '收藏应用';
+    }
+    document.querySelector('[data-favorite-count]').textContent = favorites.size;
+  }
+  let expanded = false;
+  let currentView = viewField.value;
+
+  function navigationURL(view, query, category) {
+    const url = new URL(location.href);
+    for (const [key, value] of [['view', view === 'flat' ? 'flat' : category ? 'grouped' : ''], ['q', query], ['category', category], ['access', accessFilter === 'all' ? '' : accessFilter]]) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
+    return url;
+  }
+  function plainClick(event) {
+    return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+  }
   function filter(updateHistory = true) {
     const query = search.value.trim();
+    // Search always covers the entire directory, including collapsed entries.
+    if (query) categoryField.value = '';
+    categoryField.value = categoryAliases[categoryField.value] ?? categoryField.value;
     const category = categoryField.value;
     const needle = query.toLowerCase();
+    const view = viewField.value;
+    if (view !== currentView) {
+      for (const row of rows) {
+        const destination = view === 'flat' ? flat : row.dataset.group === 'operations' && row.dataset.projectId === 'ops-hub' ? primary : destinations.get(row.dataset.group);
+        destination.append(row);
+      }
+      currentView = view;
+    }
     let count = 0;
     for (const row of rows) {
-      row.hidden = !!((category && row.dataset.category !== category) ||
-        (needle && !row.dataset.search.includes(needle)));
+      row.hidden = !!((category && row.dataset.category !== category) || (needle && !row.dataset.search.includes(needle)) || (accessFilter === 'available' && (row.dataset.accessState !== 'available' || !row.querySelector('a'))) || (accessFilter === 'favorites' && !favorites.has(row.dataset.projectId)));
       if (!row.hidden) count++;
     }
+    grouped.hidden = view !== 'grouped';
+    flat.hidden = view !== 'flat' || count === 0;
+    for (const group of groups) {
+      const matches = rows.filter(row => row.dataset.group === group.dataset.directoryGroup && !row.hidden);
+      group.hidden = matches.length === 0;
+      group.querySelector('[data-group-count]').textContent = matches.length;
+    }
+    const children = rows.filter(row => row.dataset.group === 'operations' && row.dataset.projectId !== 'ops-hub' && !row.hidden);
+    primary.hidden = !rows.some(row => row.dataset.group === 'operations' && row.dataset.projectId === 'ops-hub' && !row.hidden);
+    details.hidden = children.length === 0;
+    details.open = !!(query || category) || expanded;
+    document.querySelector('[data-operations-count]').textContent = children.length;
+    document.querySelector('[data-disclosure-hint]').textContent = details.open ? '收起入口' : '展开直达';
     for (const tab of tabs) {
       if (tab.dataset.category === category) tab.setAttribute('aria-current', 'page');
       else tab.removeAttribute('aria-current');
-      const url = new URL('/', location.origin);
-      if (query) url.searchParams.set('q', query);
-      if (tab.dataset.category) url.searchParams.set('category', tab.dataset.category);
+      // A category click starts a category view; it clears the global search.
+      const url = navigationURL(view, '', tab.dataset.category);
       tab.href = url.pathname + url.search;
     }
+    for (const tab of viewTabs) {
+      if (tab.dataset.view === view) tab.setAttribute('aria-current', 'page');
+      else tab.removeAttribute('aria-current');
+      const url = navigationURL(tab.dataset.view, query, category);
+      tab.href = url.pathname + url.search;
+    }
+    for (const button of accessButtons) button.setAttribute('aria-pressed', String(button.dataset.accessFilter === accessFilter));
+    syncFavorites();
     empty.hidden = count > 0;
-    const filtered = !!(query || category);
+    const filtered = !!(query || category || accessFilter !== 'all');
+    document.querySelector('[data-result-count]').textContent = filtered ? `找到 ${count} / ${rows.length} 个入口` : view === 'grouped' ? `共 ${rows.length} 个入口 · 运营平台与工具可展开直达` : `显示全部 ${rows.length} 个应用与工具`;
     empty.querySelector('h2').textContent = filtered ? '没有匹配的链接' : '还没有链接';
     empty.querySelector('p').textContent = filtered ? '试试其他关键词或分类。' : '常用入口将在这里展示。';
+    if (accessFilter === 'favorites' && !query && !category && !count) {
+      empty.querySelector('h2').textContent = '把常用应用收藏在这里';
+      empty.querySelector('p').textContent = '点击应用右侧的星标，下次就能更快找到它。';
+    }
     empty.querySelector('[data-reset]').hidden = !filtered;
     if (updateHistory) {
-      const url = new URL(location.href);
-      for (const [key, value] of [['q', query], ['category', category]]) {
-        if (value) url.searchParams.set(key, value);
-        else url.searchParams.delete(key);
-      }
+      const url = navigationURL(view, query, category);
       if (url.href !== location.href) history.pushState(null, '', url);
     }
   }
+  for (const button of accessButtons) button.addEventListener('click', () => { accessFilter = button.dataset.accessFilter; filter(); });
+  for (const button of favoriteButtons) button.addEventListener('click', () => {
+    const id = button.dataset.favorite;
+    if (favorites.has(id)) favorites.delete(id); else favorites.add(id);
+    try { localStorage.setItem(favoriteKey, JSON.stringify([...favorites])); } catch {}
+    filter(false);
+  });
+  for (const tab of viewTabs) tab.addEventListener('click', event => {
+    if (!plainClick(event)) return;
+    event.preventDefault(); viewField.value = tab.dataset.view; filter();
+  });
   for (const tab of tabs) tab.addEventListener('click', event => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    categoryField.value = tab.dataset.category;
-    filter();
+    if (!plainClick(event)) return;
+    event.preventDefault(); search.value = ''; categoryField.value = tab.dataset.category; filter();
+  });
+  details.querySelector('summary').addEventListener('click', event => {
+    event.preventDefault(); expanded = !details.open; details.open = expanded;
+    document.querySelector('[data-disclosure-hint]').textContent = expanded ? '收起入口' : '展开直达';
   });
   form.addEventListener('submit', event => { event.preventDefault(); filter(); });
   search.addEventListener('input', () => filter());
   empty.querySelector('[data-reset]').addEventListener('click', event => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault(); search.value = ''; categoryField.value = ''; filter();
+    if (!plainClick(event)) return;
+    event.preventDefault(); search.value = ''; categoryField.value = ''; accessFilter = 'all'; filter();
   });
   window.addEventListener('popstate', () => {
     const params = new URLSearchParams(location.search);
+    accessFilter = ['all','available','favorites'].includes(params.get('access')) ? params.get('access') : 'all';
     search.value = params.get('q') || '';
     categoryField.value = params.get('category') || '';
+    const view = params.get('view') || (categoryField.value ? 'flat' : 'grouped');
+    viewField.value = view === 'flat' ? 'flat' : 'grouped';
     filter(false);
   });
   filter(false);
