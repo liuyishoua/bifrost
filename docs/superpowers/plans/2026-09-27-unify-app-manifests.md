@@ -6,7 +6,7 @@ The portal is an entry point for account grants and service start/stop. Each app
 
 ## Migration decisions
 
-- Ticket and Douyin keep their current source and data directories. Their YAML files retain internal ports 8767 and 8766 so current instances can be recognized during migration. New apps continue to receive internal ports automatically.
+- Ticket and Douyin keep their current source and data directories. Their YAML files retain internal ports 20002 and 20001 so current instances can be recognized during migration. New apps continue to receive internal ports automatically.
 - Caddy keeps the separate Douyin verification origin and its restricted paths. Regular Ticket and Douyin pages move to generated per-app external ports.
 - Existing applications expose the optional JSON readiness and activity endpoints so safe stop checks remain in the applications, not in platform-specific adapters.
 - A trusted manifest may name a Python interpreter outside its application directory; the executable path is resolved relative to that directory. New applications can keep their executable and environment inside their own directory.
