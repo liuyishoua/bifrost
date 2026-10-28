@@ -1,7 +1,7 @@
 {% macro project_row(link) -%}
 <li data-project-id="{{ link.id }}" data-category="{{ link.category }}" data-group="{{ link.group }}" data-index="{{ link.index }}" data-access-state="{{ link.access_state }}" data-search="{{ link.search }}"{% if link.id == 'ops-hub' %} class="operations-entry"{% endif %}{% if link not in links %} hidden{% endif %}>
   {% if link.enabled %}<a class="app-link" href="{{ link.access_url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ link.name }}（在新标签页打开）">{% else %}<div class="app-link app-link-pending" aria-disabled="true">{% endif %}
-    {% set visual = app_visual(link.id) %}<span class="project-badge badge-{{ visual.tone }}" aria-hidden="true"><img src="{{ url_for('static', filename=visual.src) }}" alt="" width="40" height="40" loading="eager" decoding="async"></span>
+    {% set visual = app_visual(link.id) %}<span class="project-badge badge-{{ visual.tone }}" aria-hidden="true"><img src="{{ asset_url(url_for('static', filename=visual.src)) }}" alt="" width="40" height="40" loading="eager" decoding="async"></span>
     <span class="app-link-copy"><strong>{{ link.name }}</strong>{% if link.description %}<span class="app-link-description">{{ link.description }}</span>{% endif %}</span>
     <span class="app-access-state access-{{ link.access_state }}">{{ '可直接使用' if link.access_state == 'available' else link.access_label if link.enabled else '未上线' }}</span>
     <span class="app-link-open">{% if link.enabled %}{{ '进入中心' if link.id == 'ops-hub' else link.access_label }} <span aria-hidden="true">↗</span>{% else %}未部署网站{% endif %}</span>

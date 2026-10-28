@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f6f8fc"><title>{{ title }} · 彩虹桥</title>
 <script>(()=>{document.documentElement.classList.add('js');try{const t=localStorage.getItem('workspace-theme')||localStorage.getItem('theme-mode');document.documentElement.dataset.theme=['dark','light'].includes(t)?t:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}catch{}})();</script>
-<style>{{ portal_css|safe }}</style>
+<link rel="stylesheet" href="{{ asset_url('/static/portal.css') }}">
 </head>
 <body>
 <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -31,5 +31,5 @@
 <footer class="site-footer"><span>彩虹桥 · 连接工作与生活</span><a href="/permissions">查看应用权限 →</a></footer>
 </div>
 <script id="portal-session-state" type="application/json">{{ session_state|tojson }}</script>
-<script src="/static/theme.js"></script><script src="/static/feedback.js?v=20261027-1" defer></script><script src="/static/experience.js?v=20261027-1" defer></script>
+<script src="{{ asset_url('/static/theme.js') }}"></script><script src="{{ asset_url('/static/feedback.js?v=20261027-1') }}" defer></script><script src="{{ asset_url('/static/experience.js?v=20261027-1') }}" defer></script>
 </body></html>

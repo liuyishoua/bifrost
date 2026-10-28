@@ -17,6 +17,7 @@ https://d.58nft.net {
         import "/etc/caddy/acli.d/routes/leo-model-bridge.caddy"
     }
     handle {
+        encode zstd gzip
         reverse_proxy 127.0.0.1:8790
     }
 }

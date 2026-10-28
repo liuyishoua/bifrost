@@ -63,6 +63,12 @@ def create_app(runtime=None, links_path=None):
     os.chmod(database, 0o600)
     portal_css = (Path(__file__).parent / "static" / "portal.css").read_text(encoding="utf-8")
     app = Flask(__name__)
+    from page_assets import install_pages
+    page_assets = install_pages(app, set())
+    @app.context_processor
+    def frontend_assets():
+        page_assets.refresh()
+        return {"asset_url": page_assets.asset_url}
     identity = IdentityClient(os.environ["OPS_IDENTITY_URL"]) if os.environ.get("OPS_IDENTITY_URL") else None
     identity_login = "https://d.58nft.net:9461/login?return=bifrost"
     app.config["MAX_CONTENT_LENGTH"] = 65536

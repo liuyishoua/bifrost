@@ -86,5 +86,5 @@
 <section class="panel permission-audit" data-admin-panel="audit" aria-labelledby="admin-tab-audit"{% if active_tab != 'audit' %} hidden{% endif %}><table><thead><tr><th>时间（UTC）</th><th>操作者</th><th>对象</th><th>操作</th><th>说明</th></tr></thead><tbody>{% for row in audit_rows %}<tr><td>{{ row.created_at }}</td><td>{{ row.actor_name }}</td><td>{{ row.username }}</td><td>{{ {'request':'提交申请','approved':'同意申请','rejected':'拒绝申请','revoked':'收回权限','granted':'直接开通','account_update':'更新账号','disabled':'停用账号','active':'启用账号','deleted':'删除用户','credentials_update':'修改账号密码','password_revealed':'查看密码'}.get(row.action,row.action) }} {{ row.app_id }}</td><td>{{ row.note }}</td></tr>{% else %}<tr><td colspan="5">暂无记录。</td></tr>{% endfor %}</tbody></table></section>
 <p class="sr-only" data-admin-status role="status" aria-live="polite"></p>
 </section>
-<script src="/static/admin-users.js?v=20261027-5" defer></script>
-<script src="/static/admin-tabs.js?v=20261027-1" defer></script>
+<script src="{{ asset_url('/static/admin-users.js?v=20261027-5') }}" defer></script>
+<script src="{{ asset_url('/static/admin-tabs.js?v=20261027-1') }}" defer></script>
